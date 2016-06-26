@@ -42,10 +42,6 @@ bluetool->
 
 When BlueTool is started by launchd it creates an XPC service called `com.apple.BlueTool` and ignores all input from stdin.  Most output is logged to stdout or stderr.
 
-{% sidenote %}
-You can modify a launchd plist to include the "StandardOutPath" and "StandardErrorPath" keys to redirect each to a file.  Note that on iOS you also need to keep in mind which rules are enforced by the sandbox. Not all paths the user may access on the filesystem are valid.
-{% endsidenote %}
-
 In addition to the interactive shell and XPC service, data is also sent to and received from the Bluetooth hardware.  This communication is carried out over a UART connection and uses the Bluetooth Host-Controller Interface (HCI) command set.
 
 ## XPC Service
