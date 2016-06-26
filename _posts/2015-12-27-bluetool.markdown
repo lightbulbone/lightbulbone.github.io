@@ -8,7 +8,7 @@ On iOS the Bluetooth stack is split into three layers as shown in Figure 1.  At 
 
 All analysis in this article was carried out on a 5th generation iPod Touch running iOS 8.4 (12H143).  My primary focus during analysis was on understanding what functionality BlueTool provides.  I was not actively looking for bugs despite finding a couple. 
 
-{% figure img:/assets/images/2015/12/iOS-Bluetooth-Overview.png fnum:1 caption:"Overview of the iOS Bluetooth stack." %}
+[[/assets/images/2015/12/iOS-Bluetooth-Overview.png|alt="Overview of the iOS Bluetooth stack."]]
 
 ## BlueTool I/O Mechanisms
 
