@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reversing iOS Applications (Part 2)</title>
+  <meta name="description" content="In the first post of this series we talked about how to get an app from the App Store into a reversable state.  Essentially we had to run the app inside a de..."> 
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="canonical" href="https://www.lightbulbone.com/2012/08/09/reversing-ios-applications-part-2.html">
+  <link rel="alternate" type="application/rss+xml" title="LightBulbOne" href="https://www.lightbulbone.com/feed.xml" />
+</head>
+
+  <body>
+    <nav class="navbar navbar-static-top navbar-inverse" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">
+        <!-- <img src="/img/elastic-path-logo.png" width="10" height="10" /> -->
+        LightBulbOne
+      </a>
+    </div>
+    <div class="collapse navbar-collapse navbar-ex1-collapse">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a href="/">Blog</a>
+            </li>
+          
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">Reversing iOS Applications (Part 2)</h2>
+      <p class="blog-post-meta">09 August 2012</p>
+      <p>In the first post of this series we talked about how to get an app from the App Store into a reversable state.  Essentially we had to run the app inside a debugger and dump the contents of memory to a file which was then used to patch the original (encrypted) binary.</p>
+
+<p>After writing that post I started to work through Kik in IDA when I got a text message from a friend.  It then occurred to me, why bother with Kik when I can (in theory) target Apple’s iMessage service?  So I’ve swapped out Kik and replaced it with the default Messages app found on each and every iOS device.</p>
+
+<p>With the new app selected I dutifully copied it from my iPod onto my machine and promptly ran <code class="highlighter-rouge">strings</code> expecting to see a bunch of jibberish returned.  To my surprise, there was human readable text!</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>[dean@simba MobileSMS]$ strings MobileSMS
+...
+message_guid
+chat_identifier
+IMDSpotlight
+Unable to find a conversation for Message [%@] found row ID [%d] and group ID [%@]
+No Message GUID in Spotlight URL [%@].  I have no idea what to show you.
+Asked to _showSMSConversationAndMessageForSearchURL: [%@]
+Asked to showConversationAndMessageForSearchURL: [%@]
+MailAutosaveIdentifier
+...
+
+Well, that’s pretty cool! As you can see we clearly have readable strings containing various debug messages along with all the info required for Objective-C.  For the uninitiated (like myself), it turns out that the default apps shipping on iDevices are not encrypted.  I haven’t looked into why this is the case, but I suspect it has something to do with how code signing is implemented.  So we have an unencrypted app that when loaded into IDA doesn’t result in complaining what so ever.
+
+Before digging deeper using IDA it is a good idea to see what libraries and frameworks this app uses.  As usual, this can be done using otool as follows.
+
+[dean@simba MobileSMS]$ otool -VL MobileSMS
+MobileSMS:
+...
+	/System/Library/PrivateFrameworks/IMCore.framework/Frameworks/IMDPersistence.framework/IMDPersistence (compatibility version 1.0.0, current version 800.0.0)
+	time stamp 2 Wed Dec 31 16:00:02 1969
+	/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit (compatibility version 1.0.0, current version 1.0.0)
+	time stamp 2 Wed Dec 31 16:00:02 1969
+...
+	/System/Library/PrivateFrameworks/Conference.framework/Conference (compatibility version 1.0.0, current version 1.0.0)
+	time stamp 2 Wed Dec 31 16:00:02 1969
+	/System/Library/PrivateFrameworks/IMCore.framework/IMCore (compatibility version 1.0.0, current version 800.0.0)
+	time stamp 2 Wed Dec 31 16:00:02 1969
+	/System/Library/PrivateFrameworks/FTClientServices.framework/FTClientServices (compatibility version 1.0.0, current version 800.0.0)
+	time stamp 2 Wed Dec 31 16:00:02 1969
+...
+</code></pre>
+</div>
+
+<p>Among the usual suspects there are a few interestingly named frameworks linked.  The one that caught my eye the most was ChatKit.  When I looked at Messages in IDA I also found what seemed like an unusually high number of references to ChatKit as well and after a bit of digging I started to suspect that ChatKit is actually the framework that is responsible for sending/receiving messages.  With that suspicion let’s dig a little into ChatKit.</p>
+
+<p>Once again, I dutifully got the path to ChatKit from <code class="highlighter-rouge">otool</code> and went to copy it to my machine.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>lux0r:~ root# scp /System/Library/PrivateFrameworks/ChatKit.framework/ChatKit dean@192.168.1.11:~/
+Password:
+/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit: No such file or directory
+</code></pre>
+</div>
+
+<p>No such file or directory? What the heck? Upon convincing myself that I do indeed have the correct path I was pretty stumped.  Otool clearly states that MobileSMS (the Messages app) links against this framework and IDA shows me the exact same information.  Even some of the debug strings gathered earlier reference it!  Needless to say this definitely ticked me off.  All I wanted to do was disassemble and inspect ChatKit in peace, but iOS wasn’t having any of that.</p>
+
+<p>Stay tuned for the next instalment of this series where we solve the case of the missing ChatKit!</p>
+
+
+    </div>
+  </div>
+</div>
+
+    <footer class="footer">
+  <div class="container">
+    <div class="row row-footer-space">
+      <div class="col-md-4">
+        <a href="mailto:info@lightbulbone.com">info@lightbulbone.com</a></li>
+      </div>
+      <div class="col-md-4">
+        
+            <a href="https://twitter.com/lightbulbone">
+              <i class="fa fa-twitter"></i>
+              <span>lightbulbone</span>
+            </a>
+        
+      </div>
+      <div class="col-md-4">
+        One bright idea after another.
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/bower_components/jquery/dist/jquery.min.js"></script>
+<script src="/bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js"></script>
+
+  </body>
+</html>

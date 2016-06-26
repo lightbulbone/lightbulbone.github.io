@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote debugging with LLDB</title>
+  <meta name="description" content="The other day I was working on a project in Xcode and was getting fed up with it crashing and just not behaving.  So I set out on a mission to figure out how..."> 
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="canonical" href="https://www.lightbulbone.com/2013/01/08/remote-debugging-with-lldb.html">
+  <link rel="alternate" type="application/rss+xml" title="LightBulbOne" href="https://www.lightbulbone.com/feed.xml" />
+</head>
+
+  <body>
+    <nav class="navbar navbar-static-top navbar-inverse" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">
+        <!-- <img src="/img/elastic-path-logo.png" width="10" height="10" /> -->
+        LightBulbOne
+      </a>
+    </div>
+    <div class="collapse navbar-collapse navbar-ex1-collapse">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a href="/">Blog</a>
+            </li>
+          
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">Remote debugging with LLDB</h2>
+      <p class="blog-post-meta">08 January 2013</p>
+      <p>The other day I was working on a project in Xcode and was getting fed up with it crashing and just not behaving.  So I set out on a mission to figure out how to remote debug an iOS app.  The secret to it all is LLDB, the LLVM Debugger.  LLDB is now the default debugger in Xcode (has been for awhile) and is a pretty powerful debugger complete with scripting in Python and many other hidden gems.</p>
+
+<p>To follow along you will need:</p>
+
+<ul>
+  <li>A jailbroken iDevice setup for development</li>
+  <li>Developer Tools (from Xcode) installed on a Mac</li>
+</ul>
+
+<p>At a high-level this approach works by running a little server on the iDevice and then connecting remotely from your Mac.  To begin, SSH into your iDevice and find some program of interest (such as an iOS app you may be developing).  Then start the debug server on your iDevice.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>iPhone:/Applications/FieldTest.app root# /Developer/usr/bin/debugserver localhost:12345 ./FieldTest
+debugserver-189 for armv7.
+Listening to port 12345...
+</code></pre>
+</div>
+
+<p>Now on your Mac, we launch LLDB and then connect to the remote session.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>[dean@simba ~]$ lldb
+(lldb) platform select remote-ios
+  Platform: remote-ios
+ Connected: no
+  SDK Path: "/Users/dean/Library/Developer/Xcode/iOS DeviceSupport/6.0.1 (10A523)"
+ SDK Roots: [ 0] "/Users/dean/Library/Developer/Xcode/iOS DeviceSupport/5.1.1 (9B206)"
+ SDK Roots: [ 1] "/Users/dean/Library/Developer/Xcode/iOS DeviceSupport/6.0.1 (10A523)"
+(lldb) process connect connect://192.168.1.20:12345
+Process 2237 stopped
+* thread #1: tid = 0x1603, 0x2fe7a028 dyld`_dyld_start, stop reason = signal SIGSTOP
+    frame #0: 0x2fe7a028 dyld`_dyld_start
+dyld`_dyld_start:
+-&gt; 0x2fe7a028:  mov    r8, sp
+   0x2fe7a02c:  sub    sp, sp, #16
+   0x2fe7a030:  bic    sp, sp, #7
+   0x2fe7a034:  ldr    r3, [pc, #112]            ; _dyld_start + 132
+(lldb)
+</code></pre>
+</div>
+
+<p>At this point you know have a remote connection to the process being debugged and can use LLDB as you would normally.  Note that this is the exact same way Xcode connects to an app being debugged so anything you can do in Xcode should be possible here.</p>
+
+<p>Enjoy and happy hacking!</p>
+
+
+    </div>
+  </div>
+</div>
+
+    <footer class="footer">
+  <div class="container">
+    <div class="row row-footer-space">
+      <div class="col-md-4">
+        <a href="mailto:info@lightbulbone.com">info@lightbulbone.com</a></li>
+      </div>
+      <div class="col-md-4">
+        
+            <a href="https://twitter.com/lightbulbone">
+              <i class="fa fa-twitter"></i>
+              <span>lightbulbone</span>
+            </a>
+        
+      </div>
+      <div class="col-md-4">
+        One bright idea after another.
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/bower_components/jquery/dist/jquery.min.js"></script>
+<script src="/bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js"></script>
+
+  </body>
+</html>

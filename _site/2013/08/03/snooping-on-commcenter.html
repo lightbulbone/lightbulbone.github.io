@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snooping on CommCenter</title>
+  <meta name="description" content="CommCenter is a wonderful part of iOS since it is the single point that is responsible for communication between iOS and the baseband.  And with the baseband..."> 
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="canonical" href="https://www.lightbulbone.com/2013/08/03/snooping-on-commcenter.html">
+  <link rel="alternate" type="application/rss+xml" title="LightBulbOne" href="https://www.lightbulbone.com/feed.xml" />
+</head>
+
+  <body>
+    <nav class="navbar navbar-static-top navbar-inverse" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">
+        <!-- <img src="/img/elastic-path-logo.png" width="10" height="10" /> -->
+        LightBulbOne
+      </a>
+    </div>
+    <div class="collapse navbar-collapse navbar-ex1-collapse">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a href="/">Blog</a>
+            </li>
+          
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">Snooping on CommCenter</h2>
+      <p class="blog-post-meta">03 August 2013</p>
+      <p>CommCenter is a wonderful part of iOS since it is the single point that is responsible for communication between iOS and the baseband.  And with the baseband being responsible for controlling the telephony components I wanted to see what CommCenter was telling it.</p>
+
+<p>To do this all you need to do is create a dynamic library with a few functions then shove that in between CommCenter and the baseband.  Easy, eh?</p>
+
+<p>Before I begin I should note that I did this using an iPhone 4 running iOS 6.1 (jailbroken) and that on newer iPhones the process is slightly different.</p>
+
+<p>All code is available on <a href="https://github.com/lightbulbone/ios">GitHub</a>.</p>
+
+<h3 id="creating-the-library">Creating The Library</h3>
+
+<p>To intercept the communication between CommCenter and the baseband what you need to do is replace the implementations of <code class="highlighter-rouge">open()</code>, <code class="highlighter-rouge">close()</code>, <code class="highlighter-rouge">read()</code>, and <code class="highlighter-rouge">write()</code>.  You can see how to do this in the file <code class="highlighter-rouge">ccsnoop.c</code>, but really the trick is to stick a map between your implementations and the original in a special section called <code class="highlighter-rouge">_interpose</code> in the <code class="highlighter-rouge">__DATA</code> section.</p>
+
+<p>All that’s necessary now is to compile the code into a dynamic library (see <code class="highlighter-rouge">ccsnoop.c</code> for instructions).</p>
+
+<h3 id="loading-the-library">Loading The Library</h3>
+
+<p>In order to have the library loaded by CommCenter we first need to alter its plist to include the <code class="highlighter-rouge">DYLD_INSERT_LIBRARIES</code> environment variable.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>&lt;key&gt;EnvironmentVariables&lt;/key&gt;
+&lt;dict&gt;
+     &lt;key&gt;DYLD_INSERT_LIBRARIES&lt;/key&gt;
+     &lt;string&gt;/tmp/ccsnoop.dylib&lt;/string&gt;
+&lt;/dict&gt;
+</code></pre>
+</div>
+
+<p>The library should be located at <code class="highlighter-rouge">/tmp/ccsnoop.dylib</code>; a complete plist can be found on GitHub.</p>
+
+<p>As previously mentioned, the key here is the usage of <code class="highlighter-rouge">DYLD_INSERT_LIBRARIES</code> which forces any specified libraries to be loaded before any libraries specified by CommCenter.  When this is combined with the interposition used in the library we are able to override the default implementations of the desired functions.</p>
+
+<p>With both the dynamic library and the modified plist we can then restart CommCenter and watch our log file for anything of interest.  To restart CommCenter you can just run the <code class="highlighter-rouge">injectCommCenter.sh</code> script which essentially just uses <code class="highlighter-rouge">launchctl</code> to unload and load it.</p>
+
+<h3 id="a-note-about-commcenter">A Note About CommCenter</h3>
+
+<p>Beginning in iOS 6 (or earlier, I’m not entirely sure) Apple has created two versions of CommCenter: CommCenterClassic, and CommCenter.  Which is used depends on the hardware you are using.  For example, an iPhone 4 will use CommCenterClassic while an iPhone 5 will use CommCenter.  At this point it’s unclear to me what the difference is between the two; however, I have heard that newer devices use a different protocol to communicate with the baseband.</p>
+
+<p>Until next time, happy hacking!</p>
+
+<p>@lightbulbone</p>
+
+
+    </div>
+  </div>
+</div>
+
+    <footer class="footer">
+  <div class="container">
+    <div class="row row-footer-space">
+      <div class="col-md-4">
+        <a href="mailto:info@lightbulbone.com">info@lightbulbone.com</a></li>
+      </div>
+      <div class="col-md-4">
+        
+            <a href="https://twitter.com/lightbulbone">
+              <i class="fa fa-twitter"></i>
+              <span>lightbulbone</span>
+            </a>
+        
+      </div>
+      <div class="col-md-4">
+        One bright idea after another.
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/bower_components/jquery/dist/jquery.min.js"></script>
+<script src="/bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js"></script>
+
+  </body>
+</html>

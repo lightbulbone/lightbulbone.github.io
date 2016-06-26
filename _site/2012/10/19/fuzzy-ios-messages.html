@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuzzy iOS Messages!</title>
+  <meta name="description" content="Awhile ago I came across a post about fuzzing with a new data flow language called Pythonect.  When I read about it I thought it sounded like a pretty nifty ..."> 
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="canonical" href="https://www.lightbulbone.com/2012/10/19/fuzzy-ios-messages.html">
+  <link rel="alternate" type="application/rss+xml" title="LightBulbOne" href="https://www.lightbulbone.com/feed.xml" />
+</head>
+
+  <body>
+    <nav class="navbar navbar-static-top navbar-inverse" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">
+        <!-- <img src="/img/elastic-path-logo.png" width="10" height="10" /> -->
+        LightBulbOne
+      </a>
+    </div>
+    <div class="collapse navbar-collapse navbar-ex1-collapse">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a href="/">Blog</a>
+            </li>
+          
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">Fuzzy iOS Messages!</h2>
+      <p class="blog-post-meta">19 October 2012</p>
+      <p>Awhile ago I came across a post about fuzzing with a new data flow language called Pythonect.  When I read about it I thought it sounded like a pretty nifty language so I decided to try using it to fuzz the iMessage interface in the iOS Messages app.</p>
+
+<p>The first part of this task is to come up with a way to send messages to an iOS device using the iMessage service.  Luckily the new Messages app on OS X 10.8 has support for AppleScript and you can send messages through it.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>#!/usr/bin/osascript
+
+on run argv
+    set theMessage to (item 1 of argv)
+
+    tell application "Messages"
+         send theMessage to buddy "BUDDY_NAME"
+    end tell
+end run
+</code></pre>
+</div>
+
+<p>In this script we tell the Messages application to send a message that was given as an argument to the buddy <code class="highlighter-rouge">BUDDY_NAME</code>.  When you use it be sure to replace <code class="highlighter-rouge">BUDDY_NAME</code> with the correct buddy name you are using.  Also, I saved the script and named it <code class="highlighter-rouge">send_msg</code>.</p>
+
+<p>From here it’s quite easy to use Pythonect to do some fuzzing.  For example, the following script will send groups of 4 and 8 A’s, B’s, C’s, and D’s.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>['A', 'B', 'C', 'D'] -&gt; [_ * n for n in [4, 8]] -&gt; os.system("./send_msg " + _)
+</code></pre>
+</div>
+
+<p>So what else can we do with Pythonect?  Well for starters you can increase the number of characters and messages sent effectively DoSing the device.  You could also mix and match characters to see what outcome that may arrive at.</p>
+
+<p>I haven’t had much time to play with this but I’ve found that running the following command seems to crash the device.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>['A', 'B', 'C', 'D', '*', '+', '\', '/'] -&gt; [_ * n for n in [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000]] -&gt; os.system("./send_msg " + _)
+</code></pre>
+</div>
+
+<p>And, this one causes the actual name of the app to be displayed.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>['*'] -&gt; os.system("./send_msg " + _)
+</code></pre>
+</div>
+
+<p>So there is clearly something going on here, definitely stay tuned for what lurks within!</p>
+
+
+    </div>
+  </div>
+</div>
+
+    <footer class="footer">
+  <div class="container">
+    <div class="row row-footer-space">
+      <div class="col-md-4">
+        <a href="mailto:info@lightbulbone.com">info@lightbulbone.com</a></li>
+      </div>
+      <div class="col-md-4">
+        
+            <a href="https://twitter.com/lightbulbone">
+              <i class="fa fa-twitter"></i>
+              <span>lightbulbone</span>
+            </a>
+        
+      </div>
+      <div class="col-md-4">
+        One bright idea after another.
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/bower_components/jquery/dist/jquery.min.js"></script>
+<script src="/bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js"></script>
+
+  </body>
+</html>

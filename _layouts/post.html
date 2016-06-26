@@ -1,0 +1,30 @@
+---
+layout: default
+---
+
+<style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">{{ page.title }}</h2>
+      <p class="blog-post-meta">{{ page.date | date: "%d %B %Y" }}</p>
+      {{ content }}
+    </div>
+  </div>
+</div>

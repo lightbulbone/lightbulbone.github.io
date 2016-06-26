@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iOS Shared Cache Extraction</title>
+  <meta name="description" content="Having fallen off the iOS-exploration train due to completing my  Masters and other commitments, I have finally climbed back aboard in pursuit of understandi..."> 
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="canonical" href="https://www.lightbulbone.com/2013/07/26/ios-shared-cache-extraction.html">
+  <link rel="alternate" type="application/rss+xml" title="LightBulbOne" href="https://www.lightbulbone.com/feed.xml" />
+</head>
+
+  <body>
+    <nav class="navbar navbar-static-top navbar-inverse" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">
+        <!-- <img src="/img/elastic-path-logo.png" width="10" height="10" /> -->
+        LightBulbOne
+      </a>
+    </div>
+    <div class="collapse navbar-collapse navbar-ex1-collapse">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a href="/">Blog</a>
+            </li>
+          
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">iOS Shared Cache Extraction</h2>
+      <p class="blog-post-meta">26 July 2013</p>
+      <p>Having fallen off the iOS-exploration train due to completing my  Masters and other commitments, I have finally climbed back aboard in pursuit of understanding the telephony stack.</p>
+
+<p>Like most things in iOS that are used frequently, the vast majority of the frameworks and libraries used in the telephony stack reside in the dyld shared cache located at <code class="highlighter-rouge">/System/Library/Caches/com.apple.dyld/dyld_shared_cache_armv7</code>.</p>
+
+<p>In this post I am going to explain how to go about extracting this cache file so that you can then work with each library individually.</p>
+
+<h3 id="get-the-cache">Get The Cache</h3>
+
+<p>The first step in all of this is to copy the cache over to your local machine.  I did this using a program called iExplorer, but you can just as easily do it over SSH.  As a side note, you can connect to your iDevice using SSH over USB if you install a tool called iProxy.</p>
+
+<h3 id="building-dscextractor">Building <code class="highlighter-rouge">dsc_extractor</code></h3>
+
+<p>The easiest way I found to extract the cache is to use a program provided by Apple called <code class="highlighter-rouge">dsc_extractor</code>.  You can get the source for <code class="highlighter-rouge">dsc_extractor</code> by downloading the dyld package from Apples open source page at: http://opensource.apple.com/.</p>
+
+<p>After downloading the package, unarchive it then go to the <code class="highlighter-rouge">launch-cache</code> subdirectory.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>[dean@zippy tmp]$ tar -xvzf dyld-210.2.3.tar.gz
+[dean@zippy tmp]$ cd dyld-210.2.3/launch-cache/
+</code></pre>
+</div>
+
+<p>At this point we need to apply a patch to the <code class="highlighter-rouge">dsc_extractor</code> code so that it can be compiled and function properly.  The patch to be applied is available on GitHub at https://gist.github.com/lightbulbone/6092321.</p>
+
+<p>The patch can be applied using the <code class="highlighter-rouge">patch</code> command; once patched <code class="highlighter-rouge">dsc_extractor</code> can then be compiled.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>[dean@zippy launch-cache]$ patch &lt; dsc_extractor.patch
+[dean@zippy launch-cache]$ clang++ -o dsc_extractor dsc_extractor.cpp dsc_iterator.cpp
+</code></pre>
+</div>
+
+<p>You should now have a working copy of <code class="highlighter-rouge">dsc_extractor</code>.</p>
+
+<h3 id="extracting-the-cache">Extracting The Cache</h3>
+
+<p>The last step is pretty simple.  All you need to do is run <code class="highlighter-rouge">dsc_extractor</code>.</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code>[dean@zippy com.apple.dyld]$ dsc_extractor dyld_shared_cache_armv7 armv7/
+</code></pre>
+</div>
+
+<p>If you then look inside the <code class="highlighter-rouge">armv7/</code> folder you’ll find all the extracted libraries used on iOS.</p>
+
+<p>As a quick side note, you can also open the cache file directly in IDA Pro.  I found this be a bit cumbersome although you may have better luck.</p>
+
+<p>Until next time, happy hacking!</p>
+
+
+    </div>
+  </div>
+</div>
+
+    <footer class="footer">
+  <div class="container">
+    <div class="row row-footer-space">
+      <div class="col-md-4">
+        <a href="mailto:info@lightbulbone.com">info@lightbulbone.com</a></li>
+      </div>
+      <div class="col-md-4">
+        
+            <a href="https://twitter.com/lightbulbone">
+              <i class="fa fa-twitter"></i>
+              <span>lightbulbone</span>
+            </a>
+        
+      </div>
+      <div class="col-md-4">
+        One bright idea after another.
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/bower_components/jquery/dist/jquery.min.js"></script>
+<script src="/bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js"></script>
+
+  </body>
+</html>

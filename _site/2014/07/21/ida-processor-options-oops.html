@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IDA Processor Options - Oops.</title>
+  <meta name="description" content="So I’ve been working through the LLB code that I talked about in my last article and kept running into incorrectly decoded instructions.  I knew they were wr..."> 
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/custom.css">
+  <link rel="canonical" href="https://www.lightbulbone.com/2014/07/21/ida-processor-options-oops.html">
+  <link rel="alternate" type="application/rss+xml" title="LightBulbOne" href="https://www.lightbulbone.com/feed.xml" />
+</head>
+
+  <body>
+    <nav class="navbar navbar-static-top navbar-inverse" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">
+        <!-- <img src="/img/elastic-path-logo.png" width="10" height="10" /> -->
+        LightBulbOne
+      </a>
+    </div>
+    <div class="collapse navbar-collapse navbar-ex1-collapse">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a href="/">Blog</a>
+            </li>
+          
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    <style>
+table{
+    /*border-collapse: collapse;*/
+    border-spacing: 500px;
+    border: 1px solid black;
+}
+
+th{
+    border: 1px solid black;
+}
+
+td{
+    border: 1px solid black;
+}
+</style>
+
+
+<div class="container">
+  <div class="blog-main">
+    <div class="blog-post">
+      <h2 class="blog-post-title">IDA Processor Options - Oops.</h2>
+      <p class="blog-post-meta">21 July 2014</p>
+      <p>So I’ve been working through the LLB code that I talked about in my last article and kept running into incorrectly decoded instructions.  I knew they were wrong because (A) the output IDA was giving made no sense and (B) I manually decoded some of them myself to check it.</p>
+
+<p>The problem? I forgot to set the processor options when loading the LLB binary.</p>
+
+<p>So, take my mistake as a learning experience.  When loading your binary, be sure to set your processor type.</p>
+
+<p><img src="/content/images/2014/Jul/Load_IDA-phg.png" alt="IDA Pro Load File Dialog" /></p>
+
+<p>And then, the important part, set the processor options.  In this case the default architecture selected by the ARM processor module was not inline with the architecture used by the LLB code.  For LLB, be sure to select <strong>ARMv7-AR</strong>.</p>
+
+<p><img src="/content/images/2014/Jul/ARM_Options.png" alt="ARM Processor Options" /></p>
+
+<p>Live and learn,</p>
+
+<p><a href="https://twitter.com/lightbulbone">@lightbulbone</a></p>
+
+
+    </div>
+  </div>
+</div>
+
+    <footer class="footer">
+  <div class="container">
+    <div class="row row-footer-space">
+      <div class="col-md-4">
+        <a href="mailto:info@lightbulbone.com">info@lightbulbone.com</a></li>
+      </div>
+      <div class="col-md-4">
+        
+            <a href="https://twitter.com/lightbulbone">
+              <i class="fa fa-twitter"></i>
+              <span>lightbulbone</span>
+            </a>
+        
+      </div>
+      <div class="col-md-4">
+        One bright idea after another.
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/bower_components/jquery/dist/jquery.min.js"></script>
+<script src="/bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js"></script>
+
+  </body>
+</html>

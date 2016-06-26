@@ -1,3 +1,33 @@
-<html><head></head><body>
-testing
-</body></html>
+---
+layout: page
+title: Blog
+permalink: /
+---
+
+<div class="container">
+  <div class="row">
+    <div class="col-sm-8 blog-main">
+      {% for post in site.posts %}
+        <div class="blog-post">
+          <h2 class="blog-post-title">{{ post.title }}</h2>
+          <p class="blog-post-meta">{{ post.date | date: "%d %B %Y" }}</p>
+          <p>{{ post.excerpt }}</p>
+          <a class="post-link" href="{{ post.url | prepend: site.baseurl }}">Read more</a>
+        </div>
+      {% endfor %}
+      <p style="margin-top:10px">Subscribe <a href="{{ "/feed.xml" | prepend: site.baseurl }}">via RSS</a></p>
+    </div>
+    <div class="col-sm-3 col-sm-offset-1 blog-sidebar">
+      <div class="sidebar-module sidebar-module-inset">
+        <h4>About</h4>
+        <p>Words!</p>
+      </div>
+      <div class="sidebar-module">
+        <h4>Archive</h4>
+        <ol class="list-unstyled">
+          <a href="#">July 2015</a>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
