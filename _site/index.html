@@ -52,30 +52,12 @@
     <div class="col-sm-8 blog-main">
       
         <div class="blog-post">
-          <h2 class="blog-post-title">Introduction to macOS Kernel Debugging</h2>
-          <p class="blog-post-meta">04 October 2016</p>
-          <p><p>In macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the <code class="highlighter-rouge">SG_PROTECTED_VERSION_1</code> flag set on their <code class="highlighter-rouge">__TEXT</code> segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point <a href="http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/">played a role in the myth</a> that Apple had included a TPM in their Mac hardware.</p>
-
-</p>
-          <a class="post-link" href="/2016/10/04/intro-to-macos-kernel-re.html">Read more</a>
-        </div>
-      
-        <div class="blog-post">
           <h2 class="blog-post-title">Analysis of the iOS Bluetooth Stack: BlueTool</h2>
           <p class="blog-post-meta">27 December 2015</p>
           <p><p>On iOS the Bluetooth stack is split into three layers as shown in Figure 1.  At the top is the CoreBluetooth framework used by iOS app developers and at the bottom is the Bluetooth hardware itself.  In between these two layers is a collection of daemons that implement various aspects of the Bluetooth stack.  For example, most Bluetooth Low Energy (BLE) specific functionality is contained in the BTLEServer daemon.  BlueTool is one of the daemons running and is primarily responsible for acting as a bridge between the rest of the Bluetooth stack and the hardware.  It also likely acts as an internal test tool at Apple during development.</p>
 
 </p>
           <a class="post-link" href="/2015/12/27/bluetool.html">Read more</a>
-        </div>
-      
-        <div class="blog-post">
-          <h2 class="blog-post-title">From Zero To SDR</h2>
-          <p class="blog-post-meta">19 July 2015</p>
-          <p><p><strong>Heads Up: This post is not complete. While updating the blog platform it snuck out.</strong></p>
-
-</p>
-          <a class="post-link" href="/2015/07/19/from-zero-to-sdr.html">Read more</a>
         </div>
       
         <div class="blog-post">
