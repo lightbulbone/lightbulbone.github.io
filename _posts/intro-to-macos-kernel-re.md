@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Introduction to macOS Kernel Debugging"
-date: 2016-10-04 09:00:00
+date: 2016-10-04 08:30:00
 ---
 
 In macOS there is a kernel module named "Don't Steal Mac OS X" (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the `SG_PROTECTED_VERSION_1` flag set on their `__TEXT` segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point [played a role in the myth](http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/) that Apple had included a TPM in their Mac hardware.
