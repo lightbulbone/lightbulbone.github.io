@@ -6,9 +6,232 @@
 </description>
     <link>https://www.lightbulbone.com/</link>
     <atom:link href="https://www.lightbulbone.com/feed.xml" rel="self" type="application/rss+xml"/>
-    <pubDate>Tue, 04 Oct 2016 08:45:26 -0700</pubDate>
-    <lastBuildDate>Tue, 04 Oct 2016 08:45:26 -0700</lastBuildDate>
+    <pubDate>Tue, 04 Oct 2016 08:47:53 -0700</pubDate>
+    <lastBuildDate>Tue, 04 Oct 2016 08:47:53 -0700</lastBuildDate>
     <generator>Jekyll v3.2.1</generator>
+    
+      <item>
+        <title>Introduction to macOS Kernel Debugging</title>
+        <description>&lt;p&gt;In macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code class=&quot;highlighter-rouge&quot;&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code class=&quot;highlighter-rouge&quot;&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point &lt;a href=&quot;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&quot;&gt;played a role in the myth&lt;/a&gt; that Apple had included a TPM in their Mac hardware.&lt;/p&gt;
+
+&lt;p&gt;I started reversing this kernel module because I was getting frustrated trying to reverse parts of the iOS kernel.  It occurred to me that I was trying to run before walking so it was time to slow down a little.  With that in mind, this post provides an introduction to kernel debugging.  My next post will expand on this and go through reversing the DSMOS kernel module.&lt;/p&gt;
+
+&lt;h2 id=&quot;kernel-debug-kits&quot;&gt;Kernel Debug Kits&lt;/h2&gt;
+
+&lt;p&gt;Before we jump in, lets first cover why I switched to macOS when getting frustrated with iOS.  The reason is pretty straight forward: macOS and iOS are built from nearly-identical kernel (XNU) source.  In fact all of Apple’s operating systems are.&lt;/p&gt;
+
+&lt;p&gt;The big advantage to starting with macOS is that Apple provides what are known as &lt;strong&gt;Kernel Debug Kits (KDKs)&lt;/strong&gt;.  A KDK provides you with Development and Debug builds of the kernel as well as some useful lldb scripts to help with debugging.  One thing you may be wondering is what is the difference between the Debug and Development builds of the kernel? The short answer, as I understand it, is that the Development kernel is essentially the Release kernel with symbols while the Debug kernel has symbols as well as additional assertions/checks enabled.  For this foray into kernel reversing I used the Development kernel.&lt;/p&gt;
+
+&lt;p&gt;KDKs are provided by Apple and you can download them from &lt;a href=&quot;https://developer.apple.com/download/more/&quot;&gt;https://developer.apple.com/download/more/&lt;/a&gt;.  When selecting a KDK be sure to choose the one with a kernel version that matches your target machine.  I highly recommend reading the documentation provided with the KDK and will assume you have.&lt;/p&gt;
+
+&lt;h2 id=&quot;configuring-the-kernel-debugger&quot;&gt;Configuring the Kernel Debugger&lt;/h2&gt;
+
+&lt;p&gt;Unlike debugging an application, to debug the kernel you need to use two machines: the target and the host.  The host is where you’ll be running lldb and doing all your work.  The target is the machine that is running the Development kernel and you will be debugging.  For the sake of efficacy, my host is an iMac (Late 2015) running macOS 10.12 (build 16A323) and my target is a Macbook Air (Mid 2011) running macOS 10.12 Beta (16A286aa).&lt;/p&gt;
+
+&lt;p&gt;A word on the target machine: it &lt;strong&gt;does not&lt;/strong&gt; need to be physical hardware.  You can use a virtual machine.  The big difference is that on physical hardware you can easily trigger the kernel debugger using the NMI keys (more on this shortly).  There might be a way to do this in a virtual machine but I had hardware so didn’t bother to figure it out.&lt;/p&gt;
+
+&lt;p&gt;When you install the KDK on your target machine one of the steps is to set &lt;code class=&quot;highlighter-rouge&quot;&gt;boot-args&lt;/code&gt; in nvram.  Mine are set as follows:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;airy:~ dean$ nvram boot-args
+boot-args       debug=0x14e kcsuffix=development kext-dev-mode=1 kdp_match_name=en4 -v
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;Lets take a moment and go through each of these flags.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;kcsuffix&lt;/code&gt; simply instructs the boot loader which kernel it should look for.  In my case I used the Development kernel so &lt;code class=&quot;highlighter-rouge&quot;&gt;kcsuffix&lt;/code&gt; should be set to &lt;code class=&quot;highlighter-rouge&quot;&gt;development&lt;/code&gt;.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;kext-dev-mode&lt;/code&gt; causes kernel module signing requirements to be relaxed.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;-v&lt;/code&gt; enables verbose mode during boot.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The remaining two variables, &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt;, warrant a bit more discussion than a bullet point.&lt;/p&gt;
+
+&lt;h4 id=&quot;kdpnamematch&quot;&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_name_match&lt;/code&gt;&lt;/h4&gt;
+
+&lt;p&gt;Remote kernel debugging, which we are going to do, requires either Ethernet or FireWire.  It does &lt;em&gt;not&lt;/em&gt; work over WiFi or USB. This obviously begs the question of how one would go about remote debugging with a laptop that has no Ethernet port.  Thankfully, Apple has thought this through and the answer is the &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; &lt;code class=&quot;highlighter-rouge&quot;&gt;boot-args&lt;/code&gt; variable coupled with a Thunderbolt-to-Ethernet adapter.  You can also use an Apple Cinema display if you have one of those.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; variable instructs the kernel to bind the remote debugger to the specified interface.  You can find the interface name using &lt;code class=&quot;highlighter-rouge&quot;&gt;ifconfig&lt;/code&gt; and checking which interface has the desired IP assigned.  You also need to use &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; if your Mac has multiple Ethernet interfaces.&lt;/p&gt;
+
+&lt;h4 id=&quot;debug&quot;&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt;&lt;/h4&gt;
+
+&lt;p&gt;The role played by the &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt; variable is to configure the kernel debugger.  It’s value is an OR of the &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_*&lt;/code&gt; constants defined in &lt;code class=&quot;highlighter-rouge&quot;&gt;osfmk/kern/debug.h&lt;/code&gt; of the XNU source.  Table 1 documents many of the interesting and not-so-interesting constants.&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Flag&lt;/th&gt;
+      &lt;th&gt;Value&lt;/th&gt;
+      &lt;th&gt;Description&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_HALT&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x1&lt;/td&gt;
+      &lt;td&gt;Wait for debugger on boot&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_PRT&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x2&lt;/td&gt;
+      &lt;td&gt;Send &lt;code class=&quot;highlighter-rouge&quot;&gt;printf()&lt;/code&gt; output to the console&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_NMI&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x4&lt;/td&gt;
+      &lt;td&gt;Activates the kernel debugging facility, including support for NMI&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KPRT&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x8&lt;/td&gt;
+      &lt;td&gt;Send &lt;code class=&quot;highlighter-rouge&quot;&gt;kprintf()&lt;/code&gt; output to remote console&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KDB&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x10&lt;/td&gt;
+      &lt;td&gt;Use KDB instead of GDB&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_SLOG&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x20&lt;/td&gt;
+      &lt;td&gt;Enable logging system diagnostics to the system log&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_ARP&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x40&lt;/td&gt;
+      &lt;td&gt;Allows the kernel debugger nub to use ARP and thus support debugging across subnets.&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KDP_BP_DIS&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x80&lt;/td&gt;
+      &lt;td&gt;Deprecated, was used for old versions of GDB&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_LOG_PI_SCRN&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x100&lt;/td&gt;
+      &lt;td&gt;Disable the graphical panic screen.&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KDP_GETC_ENA&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x200&lt;/td&gt;
+      &lt;td&gt;Prompt to enter KDB upon panic&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KERN_DUMP_ON_PANIC&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x400&lt;/td&gt;
+      &lt;td&gt;Trigger core dump on panic&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KERN_DUMP_ON_NMI&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x800&lt;/td&gt;
+      &lt;td&gt;Trigger core dump on NMI&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_DBG_POST_CORE&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x1000&lt;/td&gt;
+      &lt;td&gt;Wait in debugger after NMI core&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_PANICLOG_DUMP&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x2000&lt;/td&gt;
+      &lt;td&gt;Send paniclog on panic,not core&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_REBOOT_POST_CORE&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x4000&lt;/td&gt;
+      &lt;td&gt;Attempt to reboot after post-panic crashdump/paniclog dump.&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_NMI_BTN_ENA&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x8000&lt;/td&gt;
+      &lt;td&gt;Enable button to directly trigger NMI&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_PRT_KDEBUG&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x10000&lt;/td&gt;
+      &lt;td&gt;kprintf KDEBUG traces&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_DISABLE_LOCAL_CORE&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x20000&lt;/td&gt;
+      &lt;td&gt;ignore local core dump support&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Table 1: Summary of constants to use in &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt; boot-args variable.&lt;/p&gt;
+
+&lt;p&gt;Some of the common values I’ve seen are: 0x141, 0x144, and 0x14e. Note that they all have &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_LOG_PI_SCRN&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_ARP&lt;/code&gt; set.&lt;/p&gt;
+
+&lt;h2 id=&quot;using-the-kernel-debugger&quot;&gt;Using the Kernel Debugger&lt;/h2&gt;
+
+&lt;p&gt;Using the remote kernel debugger essentially boils down to installing the target KDK on the host and then running lldb on the host.  You’ll want to install the target KDK on the host so that lldb has access to the symbolicated kernel as well as some handy lldb scripts developed by Apple.  One thing to keep in mind about the remote debugger: it is not always waiting for connections.  Put differently, you can only connect to it at boot if you set &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_HALT&lt;/code&gt;, during a panic, or an NMI if you set &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_NMI&lt;/code&gt;.  Being able to trigger the debugger using the NMI keys (left command, right command, and power all at once) can be very handy if you want to drop into the debugger and inspect the running kernel.&lt;/p&gt;
+
+&lt;p&gt;Once you’ve set your &lt;code class=&quot;highlighter-rouge&quot;&gt;boot-args&lt;/code&gt; on the target and restarted your machine you can start debugging.  Assuming you’ve set your &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt; variable to 0x14e once you’re machine has restarted you can trigger the kernel using the NMI keys (left command, right command, power all at once).  When you hit the NMI keys the IP address of the target will be shown on the screen. On your host you can then connect as follows.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(lldb) kdp-remote &amp;lt;target-ip&amp;gt;
+Version: Darwin Kernel Version 16.0.0: Fri Aug  5 19:25:15 PDT 2016; root:xnu-3789.1.24~6/DEVELOPMENT_X86_64; UUID=4F6F13D1-366B-3A79-AE9C-44484E7FAB18; stext=0xffffff8006000000
+Kernel UUID: 4F6F13D1-366B-3A79-AE9C-44484E7FAB18
+Load Address: 0xffffff8006000000
+Loading kernel debugging from /Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/kernel.py
+LLDB version lldb-360.1.50
+settings set target.process.python-os-plugin-path &quot;/Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/lldbmacros/core/operating_system.py&quot;
+Target arch: x86_64
+Instantiating threads completely from saved state in memory.
+settings set target.trap-handler-names hndl_allintrs hndl_alltraps trap_from_kernel hndl_double_fault hndl_machine_check _fleh_prefabt _ExceptionVectorsBase _ExceptionVectorsTable _fleh_undef _fleh_dataabt _fleh_irq _fleh_decirq _fleh_fiq_generic _fleh_dec
+command script import &quot;/Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/lldbmacros/xnu.py&quot;
+xnu debug macros loaded successfully. Run showlldbtypesummaries to enable type summaries.
+
+
+Kernel slid 0x5e00000 in memory.
+Loaded kernel file /Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development
+Loading 119 kext modules warning: Can't find binary/dSYM for com.apple.kec.corecrypto (700E1192-8CD6-3F61-ABE9-D27C2CC1F164)
+
+/*-- removed for clarity --*/
+
+. done.
+Target arch: x86_64
+Instantiating threads completely from saved state in memory.
+kernel.development was compiled with optimization - stepping may behave oddly; variables may not be available.
+Process 1 stopped
+* thread #2: tid = 0x00b6, 0xffffff800639a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513, name = '0xffffff8011639cf0', queue = '0x0', stop reason = signal SIGSTOP
+    frame #0: 0xffffff800639a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513 [opt]
+(lldb)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;At this point you can use lldb as you normally would.  You will also have a bunch of additional commands provided throught the KDK.  For example you can list all kexts like so:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(lldb) showallkexts 
+OverflowError: long too big to convert
+UUID                                 kmod_info            address              size                  id  refs TEXT exec            size     
+                         version name                          
+0490CEBA-045D-344E-AC8B-1449598798F6 0xffffff7f88fdf528   0xffffff7f88fdb000   0x5000               147     0 0xffffff7f88fdb000   0x5000   
+                            1.70 com.apple.driver.AudioAUUC    
+92511291-6B64-35B1-A824-53034DEBDD39 0xffffff7f88fdacb8   0xffffff7f88fd6000   0x5000               146     0 0xffffff7f88fd6000   0x5000   
+                         1.9.5d0 com.apple.driver.AppleHWSensor
+EDC33E0C-CAA2-3E79-951D-1FC392284B4D 0xffffff7f88fd5508   0xffffff7f88fcd000   0x9000               145     0 0xffffff7f88fcd000   0x9000   
+                             3.0 com.apple.filesystems.autofs  
+CCC57A89-31FE-3D9F-88A3-0EC7D254477B 0xffffff7f88fcb028   0xffffff7f88fc8000   0x5000               144     1 0xffffff7f88fc8000   0x5000   
+                             1.0 com.apple.kext.triggers       
+E6E68296-809B-3884-ADEF-E85831F4B106 0xffffff7f88fc7090   0xffffff7f88fbb000   0xd000               143     0 0xffffff7f88fbb000   0xd000   
+                               1 com.apple.driver.pmtelemetry  
+                           
+/*-- removed for clarity --*/
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;To find all the commands available to lldb just type &lt;code class=&quot;highlighter-rouge&quot;&gt;help&lt;/code&gt; at the prompt.  The KDK adds a lot of them rather than going through them in this post your better off taking the time to pick a few interesting ones and seeing what they do.&lt;/p&gt;
+
+&lt;p&gt;At this point, you should be able to setup remote kernel debugging in macOS and be able to inspect a running kernel.  In the next post I will put some of this to use and look at the DSMOS kernel module.&lt;/p&gt;
+
+</description>
+        <pubDate>Tue, 04 Oct 2016 01:30:00 -0700</pubDate>
+        <link>https://www.lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html</link>
+        <guid isPermaLink="true">https://www.lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html</guid>
+        
+        
+      </item>
     
       <item>
         <title>Analysis of the iOS Bluetooth Stack: BlueTool</title>
@@ -718,141 +941,6 @@ end run
         <pubDate>Fri, 14 Sep 2012 07:25:42 -0700</pubDate>
         <link>https://www.lightbulbone.com/2012/09/14/rails-hex-rays-plugin-contest-2012.html</link>
         <guid isPermaLink="true">https://www.lightbulbone.com/2012/09/14/rails-hex-rays-plugin-contest-2012.html</guid>
-        
-        
-      </item>
-    
-      <item>
-        <title>I Spy ChatKit!</title>
-        <description>&lt;p&gt;In the last post I talked about starting to investigate MobileSMS (Messages app on iOS) and concluded with the mystery of the missing ChatKit.  I’m pleased to say that ChatKit wasn’t missing, it’s just hiding!&lt;/p&gt;
-
-&lt;p&gt;Admittedly I spent way to much time staring at the ChatKit.framework folder wondering where that stupid binary went.  Everything I’d read (mainly otool and IDA) told me this framework was being loaded but it wasn’t anywhere to be found on the file system.  I even went as far as writing a little script that identified every binary on the device that linked to this framework—it had to be somewhere.  Needless to say, I was pretty confused.&lt;/p&gt;
-
-&lt;p&gt;Well, onward and upward! If you run MobileSMS under GDB and have a peak at the loaded libraries you will indeed see that ChatKit is there with an address and everything.&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;lux0r:/Applications/MobileSMS.app root# gdb ./MobileSMS 
-...
-(gdb) b UIApplicationMain
-Function &quot;UIApplicationMain&quot; not defined.
-Make breakpoint pending on future shared library load? (y or [n]) y
-Breakpoint 1 (UIApplicationMain) pending.
-(gdb) r
-...
-Breakpoint 1, 0x31f988a6 in UIApplicationMain ()
-(gdb) info sharedlibrary
-...
-Num Basename                Type Address         Reason | | Source     
-  | |                          | |                    | | | |          
-  1 dyld                       - 0x2fe00000        dyld Y Y /usr/lib/dyld at 0x2fe00000 (offset 0x0) with prefix &quot;__dyld_&quot;
-  2 MobileSMS                  - 0x1000            exec Y Y /private/var/stash/Applications/MobileSMS.app/MobileSMS (offset 0x0)
-  3 Foundation                 F 0x37dff000        dyld Y Y /System/Library/Frameworks/Foundation.framework/Foundation at 0x37dff000 (offset 0x48b000)
-                                               (objfile is) [memory object &quot;/System/Library/Frameworks/Foundation.framework/Foundation&quot; at 0x37dff000]
-  4 UIKit                      F 0x31f67000        dyld Y Y /System/Library/Frameworks/UIKit.framework/UIKit at 0x31f67000 (offset 0x48b000)
-                                               (objfile is) [memory object &quot;/System/Library/Frameworks/UIKit.framework/UIKit&quot; at 0x31f67000]
-  5 IMDPersistence             F 0x377c2000        dyld Y Y /System/Library/PrivateFrameworks/IMCore.framework/Frameworks/IMDPersistence.framework/IMDPersistence at 0x377c2000 (offset 0x48b000)
-                                               (objfile is) [memory object &quot;/System/Library/PrivateFrameworks/IMCore.framework/Frameworks/IMDPersistence.framework/IMDPersistence&quot; at 0x377c2000]
-  6 AddressBook                F 0x36aa5000        dyld Y Y /System/Library/Frameworks/AddressBook.framework/AddressBook at 0x36aa5000 (offset 0x48b000)
-                                               (objfile is) [memory object &quot;/System/Library/Frameworks/AddressBook.framework/AddressBook&quot; at 0x36aa5000]
-  7 AddressBookUI              F 0x365e2000        dyld Y Y /System/Library/Frameworks/AddressBookUI.framework/AddressBookUI at 0x365e2000 (offset 0x48b000)
-                                               (objfile is) [memory object &quot;/System/Library/Frameworks/AddressBookUI.framework/AddressBookUI&quot; at 0x365e2000]
-  8 ChatKit                    F 0x32d3a000        dyld Y Y /System/Library/PrivateFrameworks/ChatKit.framework/ChatKit at 0x32d3a000 (offset 0x48b000)
-                                               (objfile is) [memory object &quot;/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit&quot; at 0x32d3a000]
-...
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;And if you have a peak at the address listed (0x32d3a000) you’ll even find a valid Mach-O header.&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) x /7w 0x32d3a000
-0x32d3a000:	0xfeedface	0x0000000c	0x00000009	0x00000006
-0x32d3a010:	0x00000030	0x0000160c	0x801000b5
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;This thing was definitely coming from somewhere and it wasn’t the “normal” place in the file system.&lt;/p&gt;
-
-&lt;p&gt;After digging through the various plist files hoping to find a clue and running my script to find binaries linking against ChatKit many times I decided it was time to try and catch the loader in the act.  Once again in GDB load up MobileSMS but this time before starting the program set a breakpoint on &lt;code class=&quot;highlighter-rouge&quot;&gt;dlopen()&lt;/code&gt;; the function responsible for opening dynamic libraries.&lt;/p&gt;
-
-&lt;p&gt;Now run the program and watch the first parameter to &lt;code class=&quot;highlighter-rouge&quot;&gt;dlopen()&lt;/code&gt;.  A quick way to do this is to attach a command in GDB to the breakpoint.&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;lux0r:/Applications/MobileSMS.app root# gdb -q ./MobileSMS 
-Reading symbols for shared libraries . done
-(gdb) b dlopen
-Function &quot;dlopen&quot; not defined.
-Make breakpoint pending on future shared library load? (y or [n]) y
-Breakpoint 1 (dlopen) pending.
-(gdb) command 1
-Type commands for when breakpoint 1 is hit, one per line.
-End with a line saying just &quot;end&quot;.
-&amp;gt;x /s $r0
-&amp;gt;end
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;This will cause GDB to interpret the value in register R0 (first parameter of a function) as a pointer to string and print the corresponding string.  Continue along until you see the path to ChatKit printed out.  This is great! The framework is loaded, but seriously where is this thing is coming from?  While I previously knew about the existence of the dlopen() function I’ve never really used it myself so I didn’t know much about the second parameter or how it works.&lt;/p&gt;
-
-&lt;p&gt;Well, it turns out the second parameter to dlopen() is used to tell it how to proceed.  Generally speaking, the second parameter of dlopen() is used to convey whether or not to use lazy binding and how symbols from the library should be exported.  It turns out that dlopen() can also double as a mechanism to check if a library has been loaded and, if so, get a handle to it (check out the man page).  You do this by specifying RTLD_NOLOAD.&lt;/p&gt;
-
-&lt;p&gt;So, back in our GDB session print out that second parameter (value in R1) passed to dlopen() for ChatKit.&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Breakpoint 1, 0x3162957c in dlopen ()
-0x32ca67c4:	 &quot;/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit&quot;
-(gdb) p /x $r1
-$1 = 0x10
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;Alright, we have 0x10… great! What’s that mean?  Time to go source diving! From the man page for dlopen() we know the names given to the values we can pass in.  So it follows that some combination of those values should equate to 0x10.  And surely enough that is true.&lt;/p&gt;
-
-&lt;p&gt;First, head on over to &lt;a href=&quot;opensource.apple.com&quot;&gt;Apple’s Open Source page&lt;/a&gt; and grab the latest version of the dyld package.  Note that while that link is to the packages for Mac OS 10.8 the implementations used in iOS are very similar (if not the same). Once you’ve got that unpacked, do a search for one of the symbols listed in the dlopen() man page (I chose &lt;code class=&quot;highlighter-rouge&quot;&gt;RTLD_LAZY&lt;/code&gt;).&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[dean@simba dyld-210.2.3]$ grep -rn RTLD_LAZY . | grep -v unit
-...
-./include/dlfcn.h:65:#define RTLD_LAZY	0x1
-...
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;So we know the symbols accepted by dlopen() are listed in dlfcn.h which isn’t that surprising since that is the file you need to include for dlopen().&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;#if !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)
-#define RTLD_NOLOAD     0x10
-#define RTLD_NODELETE   0x80
-#define RTLD_FIRST      0x100   /* Mac OS X 10.5 and later */
-
-/*
- * Special handle arguments for dlsym().
- */
-#define RTLD_NEXT       ((void *) -1)   /* Search subsequent objects. */
-#define RTLD_DEFAULT    ((void *) -2)   /* Use default search algorithm. */
-#define RTLD_SELF       ((void *) -3)   /* Search this and subsequent objects (Mac OS X 10.5 and later) */
-#define RTLD_MAIN_ONLY  ((void *) -5)   /* Search main executable only (Mac OS X 10.5 and later) */
-#endif /* not POSIX */
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;This chunk of code is only available in non-POSIX environments, which MobileSMS is! So here we see that the value 0x10 equates to the symbol &lt;code class=&quot;highlighter-rouge&quot;&gt;RTLD_NOLOAD&lt;/code&gt;.  Which the man page says means:&lt;/p&gt;
-
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;RTLD_NOLOAD   —  The specified image is not loaded.  However, a valid handle is returned if the image already exists in the process. This provides a way to query if an image is already loaded.  The handle returned is ref-counted, so you eventually need a corresponding call to dlclose()
-&lt;/code&gt;&lt;/pre&gt;
-&lt;/div&gt;
-
-&lt;p&gt;Alright, we know for a fact that MobileSMS is not actually loading ChatKit, it’s just checking to make sure it already has been loaded!&lt;/p&gt;
-
-&lt;p&gt;To solve this mystery of the missing ChatKit we need to consult the implementation of dlopen() which can be found in the dyld source. Rather than walking through the entire dyld codebase I’ll highlight the important parts.&lt;/p&gt;
-
-&lt;p&gt;When we call dlopen() using &lt;code class=&quot;highlighter-rouge&quot;&gt;RTLD_NOLOAD&lt;/code&gt; the loader will essentially just verify that the specified image has been loaded and, if so, return a handle to it.  To do this dyld goes through a series of phases and at each one checks to see if some permutation of the given path name exists.  Eventually it gets to the point where it will decide the specified path must be part of the dyld cache.&lt;/p&gt;
-
-&lt;p&gt;The dyld cache is present on iOS and contains a variety of images in it.  You can find it at /System/Library/Caches/com.apple.dyld/dyld_shared_cache_armv7 on your device.  The cache is loaded early on in the initialization of dyld.&lt;/p&gt;
-
-&lt;p&gt;To verify that ChatKit was in this cache I opened it up in an awesome program called Synalyze It and created a smaller grammar to parse it.  You can see this in the screenshot above.&lt;/p&gt;
-
-&lt;p&gt;So there we have it folks! The ChatKit wasn’t missing after all, it was just being loaded from the cache rather than through the filesystem.&lt;/p&gt;
-
-</description>
-        <pubDate>Sat, 08 Sep 2012 15:14:00 -0700</pubDate>
-        <link>https://www.lightbulbone.com/2012/09/08/i-spy-chatkit.html</link>
-        <guid isPermaLink="true">https://www.lightbulbone.com/2012/09/08/i-spy-chatkit.html</guid>
         
         
       </item>
