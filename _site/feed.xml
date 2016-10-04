@@ -6,9 +6,232 @@
 </description>
     <link>https://www.lightbulbone.com/</link>
     <atom:link href="https://www.lightbulbone.com/feed.xml" rel="self" type="application/rss+xml"/>
-    <pubDate>Sun, 26 Jun 2016 09:54:04 -0700</pubDate>
-    <lastBuildDate>Sun, 26 Jun 2016 09:54:04 -0700</lastBuildDate>
-    <generator>Jekyll v3.1.6</generator>
+    <pubDate>Tue, 04 Oct 2016 08:16:16 -0700</pubDate>
+    <lastBuildDate>Tue, 04 Oct 2016 08:16:16 -0700</lastBuildDate>
+    <generator>Jekyll v3.2.1</generator>
+    
+      <item>
+        <title>Introduction to macOS Kernel Debugging</title>
+        <description>&lt;p&gt;In macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code class=&quot;highlighter-rouge&quot;&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code class=&quot;highlighter-rouge&quot;&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point &lt;a href=&quot;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&quot;&gt;played a role in the myth&lt;/a&gt; that Apple had included a TPM in their Mac hardware.&lt;/p&gt;
+
+&lt;p&gt;I started reversing this kernel module because I was getting frustrated trying to reverse parts of the iOS kernel.  It occurred to me that I was trying to run before walking so it was time to slow down a little.  With that in mind, this post provides an introduction to kernel debugging.  My next post will expand on this and go through reversing the DSMOS kernel module.&lt;/p&gt;
+
+&lt;h2 id=&quot;kernel-debug-kits&quot;&gt;Kernel Debug Kits&lt;/h2&gt;
+
+&lt;p&gt;Before we jump in, lets first cover why I switched to macOS when getting frustrated with iOS.  The reason is pretty straight forward: macOS and iOS are built from nearly-identical kernel (XNU) source.  In fact all of Apple’s operating systems are.&lt;/p&gt;
+
+&lt;p&gt;The big advantage to starting with macOS is that Apple provides what are known as &lt;strong&gt;Kernel Debug Kits (KDKs)&lt;/strong&gt;.  A KDK provides you with Development and Debug builds of the kernel as well as some useful lldb scripts to help with debugging.  One thing you may be wondering is what is the difference between the Debug and Development builds of the kernel? The short answer, as I understand it, is that the Development kernel is essentially the Release kernel with symbols while the Debug kernel has symbols as well as additional assertions/checks enabled.  For this foray into kernel reversing I used the Development kernel.&lt;/p&gt;
+
+&lt;p&gt;KDKs are provided by Apple and you can download them from &lt;a href=&quot;https://developer.apple.com/download/more/&quot;&gt;https://developer.apple.com/download/more/&lt;/a&gt;.  When selecting a KDK be sure to choose the one with a kernel version that matches your target machine.  I highly recommend reading the documentation provided with the KDK and will assume you have.&lt;/p&gt;
+
+&lt;h2 id=&quot;configuring-the-kernel-debugger&quot;&gt;Configuring the Kernel Debugger&lt;/h2&gt;
+
+&lt;p&gt;Unlike debugging an application, to debug the kernel you need to use two machines: the target and the host.  The host is where you’ll be running lldb and doing all your work.  The target is the machine that is running the Development kernel and you will be debugging.  For the sake of efficacy, my host is an iMac (Late 2015) running macOS 10.12 (build 16A323) and my target is a Macbook Air (Mid 2011) running macOS 10.12 Beta (16A286aa).&lt;/p&gt;
+
+&lt;p&gt;A word on the target machine: it &lt;strong&gt;does not&lt;/strong&gt; need to be physical hardware.  You can use a virtual machine.  The big difference is that on physical hardware you can easily trigger the kernel debugger using the NMI keys (more on this shortly).  There might be a way to do this in a virtual machine but I had hardware so didn’t bother to figure it out.&lt;/p&gt;
+
+&lt;p&gt;When you install the KDK on your target machine one of the steps is to set &lt;code class=&quot;highlighter-rouge&quot;&gt;boot-args&lt;/code&gt; in nvram.  Mine are set as follows:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;airy:~ dean$ nvram boot-args
+boot-args       debug=0x14e kcsuffix=development kext-dev-mode=1 kdp_match_name=en4 -v
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;Lets take a moment and go through each of these flags.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;kcsuffix&lt;/code&gt; simply instructs the boot loader which kernel it should look for.  In my case I used the Development kernel so &lt;code class=&quot;highlighter-rouge&quot;&gt;kcsuffix&lt;/code&gt; should be set to &lt;code class=&quot;highlighter-rouge&quot;&gt;development&lt;/code&gt;.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;kext-dev-mode&lt;/code&gt; causes kernel module signing requirements to be relaxed.&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;-v&lt;/code&gt; enables verbose mode during boot.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The remaining two variables, &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt;, warrant a bit more discussion than a bullet point.&lt;/p&gt;
+
+&lt;h4 id=&quot;kdpnamematch&quot;&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_name_match&lt;/code&gt;&lt;/h4&gt;
+
+&lt;p&gt;Remote kernel debugging, which we are going to do, requires either Ethernet or FireWire.  It does &lt;em&gt;not&lt;/em&gt; work over WiFi or USB. This obviously begs the question of how one would go about remote debugging with a laptop that has no Ethernet port.  Thankfully, Apple has thought this through and the answer is the &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; &lt;code class=&quot;highlighter-rouge&quot;&gt;boot-args&lt;/code&gt; variable coupled with a Thunderbolt-to-Ethernet adapter.  You can also use an Apple Cinema display if you have one of those.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; variable instructs the kernel to bind the remote debugger to the specified interface.  You can find the interface name using &lt;code class=&quot;highlighter-rouge&quot;&gt;ifconfig&lt;/code&gt; and checking which interface has the desired IP assigned.  You also need to use &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp_match_name&lt;/code&gt; if your Mac has multiple Ethernet interfaces.&lt;/p&gt;
+
+&lt;h4 id=&quot;debug&quot;&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt;&lt;/h4&gt;
+
+&lt;p&gt;The role played by the &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt; variable is to configure the kernel debugger.  It’s value is an OR of the &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_*&lt;/code&gt; constants defined in &lt;code class=&quot;highlighter-rouge&quot;&gt;osfmk/kern/debug.h&lt;/code&gt; of the XNU source.  Table 1 documents many of the interesting and not-so-interesting constants.&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Flag&lt;/th&gt;
+      &lt;th&gt;Value&lt;/th&gt;
+      &lt;th&gt;Description&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_HALT&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x1&lt;/td&gt;
+      &lt;td&gt;Wait for debugger on boot&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_PRT&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x2&lt;/td&gt;
+      &lt;td&gt;Send &lt;code class=&quot;highlighter-rouge&quot;&gt;printf()&lt;/code&gt; output to the console&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_NMI&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x4&lt;/td&gt;
+      &lt;td&gt;Activates the kernel debugging facility, including support for NMI&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KPRT&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x8&lt;/td&gt;
+      &lt;td&gt;Send &lt;code class=&quot;highlighter-rouge&quot;&gt;kprintf()&lt;/code&gt; output to remote console&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KDB&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x10&lt;/td&gt;
+      &lt;td&gt;Use KDB instead of GDB&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_SLOG&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x20&lt;/td&gt;
+      &lt;td&gt;Enable logging system diagnostics to the system log&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_ARP&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x40&lt;/td&gt;
+      &lt;td&gt;Allows the kernel debugger nub to use ARP and thus support debugging across subnets.&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KDP_BP_DIS&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x80&lt;/td&gt;
+      &lt;td&gt;Deprecated, was used for old versions of GDB&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_LOG_PI_SCRN&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x100&lt;/td&gt;
+      &lt;td&gt;Disable the graphical panic screen.&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KDP_GETC_ENA&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x200&lt;/td&gt;
+      &lt;td&gt;Prompt to enter KDB upon panic&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KERN_DUMP_ON_PANIC&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x400&lt;/td&gt;
+      &lt;td&gt;Trigger core dump on panic&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_KERN_DUMP_ON_NMI&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x800&lt;/td&gt;
+      &lt;td&gt;Trigger core dump on NMI&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_DBG_POST_CORE&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x1000&lt;/td&gt;
+      &lt;td&gt;Wait in debugger after NMI core&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_PANICLOG_DUMP&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x2000&lt;/td&gt;
+      &lt;td&gt;Send paniclog on panic,not core&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_REBOOT_POST_CORE&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x4000&lt;/td&gt;
+      &lt;td&gt;Attempt to reboot after post-panic crashdump/paniclog dump.&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_NMI_BTN_ENA&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x8000&lt;/td&gt;
+      &lt;td&gt;Enable button to directly trigger NMI&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_PRT_KDEBUG&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x10000&lt;/td&gt;
+      &lt;td&gt;kprintf KDEBUG traces&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;DB_DISABLE_LOCAL_CORE&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;0x20000&lt;/td&gt;
+      &lt;td&gt;ignore local core dump support&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Table 1: Summary of constants to use in &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt; boot-args variable.&lt;/p&gt;
+
+&lt;p&gt;Some of the common values I’ve seen are: 0x141, 0x144, and 0x14e. Note that they all have &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_LOG_PI_SCRN&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_ARP&lt;/code&gt; set.&lt;/p&gt;
+
+&lt;h2 id=&quot;using-the-kernel-debugger&quot;&gt;Using the Kernel Debugger&lt;/h2&gt;
+
+&lt;p&gt;Using the remote kernel debugger essentially boils down to installing the target KDK on the host and then running lldb on the host.  You’ll want to install the target KDK on the host so that lldb has access to the symbolicated kernel as well as some handy lldb scripts developed by Apple.  One thing to keep in mind about the remote debugger: it is not always waiting for connections.  Put differently, you can only connect to it at boot if you set &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_HALT&lt;/code&gt;, during a panic, or an NMI if you set &lt;code class=&quot;highlighter-rouge&quot;&gt;DB_NMI&lt;/code&gt;.  Being able to trigger the debugger using the NMI keys (left command, right command, and power all at once) can be very handy if you want to drop into the debugger and inspect the running kernel.&lt;/p&gt;
+
+&lt;p&gt;Once you’ve set your &lt;code class=&quot;highlighter-rouge&quot;&gt;boot-args&lt;/code&gt; on the target and restarted your machine you can start debugging.  Assuming you’ve set your &lt;code class=&quot;highlighter-rouge&quot;&gt;debug&lt;/code&gt; variable to 0x14e once you’re machine has restarted you can trigger the kernel using the NMI keys (left command, right command, power all at once).  When you hit the NMI keys the IP address of the target will be shown on the screen. On your host you can then connect as follows.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(lldb) kdp-remote &amp;lt;target-ip&amp;gt;
+Version: Darwin Kernel Version 16.0.0: Fri Aug  5 19:25:15 PDT 2016; root:xnu-3789.1.24~6/DEVELOPMENT_X86_64; UUID=4F6F13D1-366B-3A79-AE9C-44484E7FAB18; stext=0xffffff8006000000
+Kernel UUID: 4F6F13D1-366B-3A79-AE9C-44484E7FAB18
+Load Address: 0xffffff8006000000
+Loading kernel debugging from /Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/kernel.py
+LLDB version lldb-360.1.50
+settings set target.process.python-os-plugin-path &quot;/Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/lldbmacros/core/operating_system.py&quot;
+Target arch: x86_64
+Instantiating threads completely from saved state in memory.
+settings set target.trap-handler-names hndl_allintrs hndl_alltraps trap_from_kernel hndl_double_fault hndl_machine_check _fleh_prefabt _ExceptionVectorsBase _ExceptionVectorsTable _fleh_undef _fleh_dataabt _fleh_irq _fleh_decirq _fleh_fiq_generic _fleh_dec
+command script import &quot;/Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/lldbmacros/xnu.py&quot;
+xnu debug macros loaded successfully. Run showlldbtypesummaries to enable type summaries.
+
+
+Kernel slid 0x5e00000 in memory.
+Loaded kernel file /Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development
+Loading 119 kext modules warning: Can't find binary/dSYM for com.apple.kec.corecrypto (700E1192-8CD6-3F61-ABE9-D27C2CC1F164)
+
+/*-- removed for clarity --*/
+
+. done.
+Target arch: x86_64
+Instantiating threads completely from saved state in memory.
+kernel.development was compiled with optimization - stepping may behave oddly; variables may not be available.
+Process 1 stopped
+* thread #2: tid = 0x00b6, 0xffffff800639a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513, name = '0xffffff8011639cf0', queue = '0x0', stop reason = signal SIGSTOP
+    frame #0: 0xffffff800639a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513 [opt]
+(lldb)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;At this point you can use lldb as you normally would.  You will also have a bunch of additional commands provided throught the KDK.  For example you can list all kexts like so:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(lldb) showallkexts 
+OverflowError: long too big to convert
+UUID                                 kmod_info            address              size                  id  refs TEXT exec            size     
+                         version name                          
+0490CEBA-045D-344E-AC8B-1449598798F6 0xffffff7f88fdf528   0xffffff7f88fdb000   0x5000               147     0 0xffffff7f88fdb000   0x5000   
+                            1.70 com.apple.driver.AudioAUUC    
+92511291-6B64-35B1-A824-53034DEBDD39 0xffffff7f88fdacb8   0xffffff7f88fd6000   0x5000               146     0 0xffffff7f88fd6000   0x5000   
+                         1.9.5d0 com.apple.driver.AppleHWSensor
+EDC33E0C-CAA2-3E79-951D-1FC392284B4D 0xffffff7f88fd5508   0xffffff7f88fcd000   0x9000               145     0 0xffffff7f88fcd000   0x9000   
+                             3.0 com.apple.filesystems.autofs  
+CCC57A89-31FE-3D9F-88A3-0EC7D254477B 0xffffff7f88fcb028   0xffffff7f88fc8000   0x5000               144     1 0xffffff7f88fc8000   0x5000   
+                             1.0 com.apple.kext.triggers       
+E6E68296-809B-3884-ADEF-E85831F4B106 0xffffff7f88fc7090   0xffffff7f88fbb000   0xd000               143     0 0xffffff7f88fbb000   0xd000   
+                               1 com.apple.driver.pmtelemetry  
+                           
+/*-- removed for clarity --*/
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;To find all the commands available to lldb just type &lt;code class=&quot;highlighter-rouge&quot;&gt;help&lt;/code&gt; at the prompt.  The KDK adds a lot of them rather than going through them in this post your better off taking the time to pick a few interesting ones and seeing what they do.&lt;/p&gt;
+
+&lt;p&gt;At this point, you should be able to setup remote kernel debugging in macOS and be able to inspect a running kernel.  In the next post I will put some of this to use and look at the DSMOS kernel module.&lt;/p&gt;
+
+</description>
+        <pubDate>Tue, 04 Oct 2016 02:00:00 -0700</pubDate>
+        <link>https://www.lightbulbone.com/2016/10/04/intro-to-macos-kernel-re.html</link>
+        <guid isPermaLink="true">https://www.lightbulbone.com/2016/10/04/intro-to-macos-kernel-re.html</guid>
+        
+        
+      </item>
     
       <item>
         <title>Analysis of the iOS Bluetooth Stack: BlueTool</title>
@@ -16,18 +239,14 @@
 
 &lt;p&gt;All analysis in this article was carried out on a 5th generation iPod Touch running iOS 8.4 (12H143).  My primary focus during analysis was on understanding what functionality BlueTool provides.  I was not actively looking for bugs despite finding a couple.&lt;/p&gt;
 
-&lt;div class=&quot;container&quot; style=&quot;margin-top: 10px; margin-bottom: 10px&quot;&gt;
-        &lt;div class=&quot;row&quot;&gt;
-         &lt;div class=&quot;col-lg-10 col-lg-offset-1&quot;&gt;
-          &lt;figure&gt;
-           &lt;img src=&quot;/assets/images/2015/12/iOS-Bluetooth-Overview.png&quot; class=&quot;img-responsive&quot; /&gt;
-           &lt;div class=&quot;row&quot;&gt;&lt;div class=&quot;col-lg-8 col-lg-offset-2&quot;&gt;
-           &lt;figcaption&gt;Figure 1: Overview of the iOS Bluetooth stack.&lt;/figcaption&gt;
-           &lt;/div&gt;&lt;/div&gt;
-          &lt;/figure&gt;
-         &lt;/div&gt;
-        &lt;/div&gt;
-       &lt;/div&gt;
+&lt;table&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;[[/assets/images/2015/12/iOS-Bluetooth-Overview.png&lt;/td&gt;
+      &lt;td&gt;alt=”Overview of the iOS Bluetooth stack.”]]&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
 
 &lt;h2 id=&quot;bluetool-io-mechanisms&quot;&gt;BlueTool I/O Mechanisms&lt;/h2&gt;
 
@@ -51,24 +270,13 @@ BlueTool Help
   &lt;/span&gt;power            : Power on/off the Bluetooth device.
   reset            : Reset on/off/pulse the Bluetooth device.
   wake             : Wake on/off/pulse the Bluetooth device.
-Give any commands &lt;span class=&quot;s1&quot;&gt;&#39;-h&#39;&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;for &lt;/span&gt;more details.
+Give any commands &lt;span class=&quot;s1&quot;&gt;'-h'&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;for &lt;/span&gt;more details.
 device returned 3
 &lt;span class=&quot;gp&quot;&gt;bluetool-&amp;gt; &lt;/span&gt;device -D
 Opening com.apple.uart.bluetooth @ 115200 baud.
 &lt;span class=&quot;gp&quot;&gt;bluetool-&amp;gt; &lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
 
 &lt;p&gt;When BlueTool is started by launchd it creates an XPC service called &lt;code class=&quot;highlighter-rouge&quot;&gt;com.apple.BlueTool&lt;/code&gt; and ignores all input from stdin.  Most output is logged to stdout or stderr.&lt;/p&gt;
-
-&lt;div class=&quot;panel panel-info&quot;&gt;
-           &lt;div class=&quot;panel-heading&quot;&gt;
-             &lt;h3 class=&quot;panel-title&quot;&gt;Side Note&lt;/h3&gt;
-           &lt;/div&gt;
-           &lt;div class=&quot;panel-body&quot;&gt;
-            
-You can modify a launchd plist to include the &quot;StandardOutPath&quot; and &quot;StandardErrorPath&quot; keys to redirect each to a file.  Note that on iOS you also need to keep in mind which rules are enforced by the sandbox. Not all paths the user may access on the filesystem are valid.
-
-           &lt;/div&gt;
-         &lt;/div&gt;
 
 &lt;p&gt;In addition to the interactive shell and XPC service, data is also sent to and received from the Bluetooth hardware.  This communication is carried out over a UART connection and uses the Bluetooth Host-Controller Interface (HCI) command set.&lt;/p&gt;
 
@@ -797,7 +1005,7 @@ end run
 
 &lt;p&gt;From here it’s quite easy to use Pythonect to do some fuzzing.  For example, the following script will send groups of 4 and 8 A’s, B’s, C’s, and D’s.&lt;/p&gt;
 
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[&#39;A&#39;, &#39;B&#39;, &#39;C&#39;, &#39;D&#39;] -&amp;gt; [_ * n for n in [4, 8]] -&amp;gt; os.system(&quot;./send_msg &quot; + _)
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;['A', 'B', 'C', 'D'] -&amp;gt; [_ * n for n in [4, 8]] -&amp;gt; os.system(&quot;./send_msg &quot; + _)
 &lt;/code&gt;&lt;/pre&gt;
 &lt;/div&gt;
 
@@ -805,13 +1013,13 @@ end run
 
 &lt;p&gt;I haven’t had much time to play with this but I’ve found that running the following command seems to crash the device.&lt;/p&gt;
 
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[&#39;A&#39;, &#39;B&#39;, &#39;C&#39;, &#39;D&#39;, &#39;*&#39;, &#39;+&#39;, &#39;\&#39;, &#39;/&#39;] -&amp;gt; [_ * n for n in [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000]] -&amp;gt; os.system(&quot;./send_msg &quot; + _)
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;['A', 'B', 'C', 'D', '*', '+', '\', '/'] -&amp;gt; [_ * n for n in [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000]] -&amp;gt; os.system(&quot;./send_msg &quot; + _)
 &lt;/code&gt;&lt;/pre&gt;
 &lt;/div&gt;
 
 &lt;p&gt;And, this one causes the actual name of the app to be displayed.&lt;/p&gt;
 
-&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[&#39;*&#39;] -&amp;gt; os.system(&quot;./send_msg &quot; + _)
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;['*'] -&amp;gt; os.system(&quot;./send_msg &quot; + _)
 &lt;/code&gt;&lt;/pre&gt;
 &lt;/div&gt;
 
@@ -821,28 +1029,6 @@ end run
         <pubDate>Fri, 19 Oct 2012 13:42:06 -0700</pubDate>
         <link>https://www.lightbulbone.com/2012/10/19/fuzzy-ios-messages.html</link>
         <guid isPermaLink="true">https://www.lightbulbone.com/2012/10/19/fuzzy-ios-messages.html</guid>
-        
-        
-      </item>
-    
-      <item>
-        <title>Rails - Hex Rays Plugin Contest 2012</title>
-        <description>&lt;p&gt;This year I decided to try submitting to the annual Hex Rays plugin contest.  I’m pleased to announce my plugin, Rails.&lt;/p&gt;
-
-&lt;p&gt;Rails is a plugin that simplifies the task of working with multiple instances of IDA Pro.  There are three main advantages to Rails.  First, you won’t go insane trying to work with several instances at once.  Second, your project databases remain uncluttered from the addition of linked libraries and other bits of code.  And third, you don’t need to continuously reverse the same libraries over and over again.&lt;/p&gt;
-
-&lt;p&gt;The plugin is pretty straight forward to use.  Once you’ve opened up a database, just go to Edit-&amp;gt;Plugins-&amp;gt;Rails and enable it.  This will cause a new panel to appear in IDA which lists any other open instances of IDA that are using Rails as well as output from Rails.  With it you can select a function and then see the associated comments or jump to its definition where ever that may be.  Another handy feature is the ability to see the list of open instances and just jump to them by double clicking there name in the list.  For a demo check out the video below.&lt;/p&gt;
-
-&lt;p&gt;If you’d like to work with the code it is available on Github at&lt;/p&gt;
-
-&lt;p&gt;https://github.com/lightbulbone/rails&lt;/p&gt;
-
-&lt;p&gt;.  Note that the plugin currently only builds on Mac OS X; however, I will (very soon) make a build script for Windows.&lt;/p&gt;
-
-</description>
-        <pubDate>Fri, 14 Sep 2012 07:25:42 -0700</pubDate>
-        <link>https://www.lightbulbone.com/2012/09/14/rails-hex-rays-plugin-contest-2012.html</link>
-        <guid isPermaLink="true">https://www.lightbulbone.com/2012/09/14/rails-hex-rays-plugin-contest-2012.html</guid>
         
         
       </item>

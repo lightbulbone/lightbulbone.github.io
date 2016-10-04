@@ -67,18 +67,14 @@ td{
 
 <p>All analysis in this article was carried out on a 5th generation iPod Touch running iOS 8.4 (12H143).  My primary focus during analysis was on understanding what functionality BlueTool provides.  I was not actively looking for bugs despite finding a couple.</p>
 
-<div class="container" style="margin-top: 10px; margin-bottom: 10px">
-        <div class="row">
-         <div class="col-lg-10 col-lg-offset-1">
-          <figure>
-           <img src="/assets/images/2015/12/iOS-Bluetooth-Overview.png" class="img-responsive" />
-           <div class="row"><div class="col-lg-8 col-lg-offset-2">
-           <figcaption>Figure 1: Overview of the iOS Bluetooth stack.</figcaption>
-           </div></div>
-          </figure>
-         </div>
-        </div>
-       </div>
+<table>
+  <tbody>
+    <tr>
+      <td>[[/assets/images/2015/12/iOS-Bluetooth-Overview.png</td>
+      <td>alt=”Overview of the iOS Bluetooth stack.”]]</td>
+    </tr>
+  </tbody>
+</table>
 
 <h2 id="bluetool-io-mechanisms">BlueTool I/O Mechanisms</h2>
 
@@ -109,17 +105,6 @@ Opening com.apple.uart.bluetooth @ 115200 baud.
 <span class="gp">bluetool-&gt; </span></code></pre></figure>
 
 <p>When BlueTool is started by launchd it creates an XPC service called <code class="highlighter-rouge">com.apple.BlueTool</code> and ignores all input from stdin.  Most output is logged to stdout or stderr.</p>
-
-<div class="panel panel-info">
-           <div class="panel-heading">
-             <h3 class="panel-title">Side Note</h3>
-           </div>
-           <div class="panel-body">
-            
-You can modify a launchd plist to include the "StandardOutPath" and "StandardErrorPath" keys to redirect each to a file.  Note that on iOS you also need to keep in mind which rules are enforced by the sandbox. Not all paths the user may access on the filesystem are valid.
-
-           </div>
-         </div>
 
 <p>In addition to the interactive shell and XPC service, data is also sent to and received from the Bluetooth hardware.  This communication is carried out over a UART connection and uses the Bluetooth Host-Controller Interface (HCI) command set.</p>
 
