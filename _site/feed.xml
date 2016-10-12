@@ -6,9 +6,341 @@
 </description>
     <link>https://www.lightbulbone.com/</link>
     <atom:link href="https://www.lightbulbone.com/feed.xml" rel="self" type="application/rss+xml"/>
-    <pubDate>Tue, 04 Oct 2016 08:47:53 -0700</pubDate>
-    <lastBuildDate>Tue, 04 Oct 2016 08:47:53 -0700</lastBuildDate>
+    <pubDate>Tue, 11 Oct 2016 21:02:20 -0700</pubDate>
+    <lastBuildDate>Tue, 11 Oct 2016 21:02:20 -0700</lastBuildDate>
     <generator>Jekyll v3.2.1</generator>
+    
+      <item>
+        <title>Reversing a macOS Kernel Extension</title>
+        <description>&lt;p&gt;In my &lt;a href=&quot;http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html&quot;&gt;last post&lt;/a&gt; I covered the basics of kernel debugging in macOS.  In this post we will put some of that to use and work through the process of reversing a macOS kernel module.&lt;/p&gt;
+
+&lt;p&gt;As I said in my last post, in macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code class=&quot;highlighter-rouge&quot;&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code class=&quot;highlighter-rouge&quot;&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  My goal for this post is to simply work through the kernel module with the intent of discovering its functionality and use it as an opportunity to learn a bit about kernel debugging.&lt;/p&gt;
+
+&lt;p&gt;If you’d like to follow along I pulled the DSMOS module off of a laptop running macOS Sierra Beta (16A286a).  Based on cursory looks at a couple copies from different versions of macOS it hasn’t changed much recently so you should be able to follow along with a copy from Mac OS X 10.11 or macOS Sierra.  As you’ll see in the screenshots, I used IDA Pro for this reversing however using a program like Hopper would be fine as well.&lt;/p&gt;
+
+&lt;h2 id=&quot;first-look&quot;&gt;First Look&lt;/h2&gt;
+
+&lt;p&gt;At a glance, the DSMOS kernel module is fairly simple in terms of number of functions.  It has 25 functions of which we only really care about 6.  Most of the functions we don’t care about are constructors or destructors.  Admittedly I haven’t taken the time to understand constructors and destructors used by a kernel module sp will be skipping them in this post.&lt;/p&gt;
+
+&lt;p&gt;Typically when I first look at a binary I start by looking at the strings in the binary.&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-01.png&quot; width=&quot;75%&quot; /&gt;
+&lt;figcaption&gt;Figure 1: Strings in DSMOS kernel module&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;As seen in Figure 1, there really aren’t that many strings and they aren’t all that exciting.  The most interesting is probably the string “AppleSMC” which is an indicator that this module interacts with the System Management Controller.&lt;/p&gt;
+
+&lt;p&gt;Given that there are so few functions in this binary my approach was to simply go through each of them, have a quick look at the control flow graph (CFG) for a rough estimate of complexity, and put the function either on the “care” or “don’t care” list.  Doing this I ended up with 9 functions of interest (see Table 1).&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Address&lt;/th&gt;
+      &lt;th&gt;Name&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00000A9E&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_A9E&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00000B2A&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00000D30&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_D30&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00000E9E&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_E9E&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;0000125A&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_125A&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00001616&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1616&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00001734&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1734&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00001C48&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1C48&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;00001C94&lt;/code&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1C94&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Table 1: Potentially interesting function addresses and associated names.&lt;/p&gt;
+
+&lt;p&gt;With these functions as starting points, the next step is to start working through them.  At this point our goal is identify what each functionality each provides.&lt;/p&gt;
+
+&lt;h2 id=&quot;registering-an-ioservice-notification-handler&quot;&gt;Registering an IOService Notification Handler&lt;/h2&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-02.png&quot; width=&quot;100%&quot; /&gt;
+&lt;figcaption&gt;Figure 2: Main block of code in sub_A9E&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;The relevant block of code from &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_A9E&lt;/code&gt; is shown in Figure 2.  In words, this function first retrieves a matching dictionary for the &lt;code class=&quot;highlighter-rouge&quot;&gt;AppleSMC&lt;/code&gt; service then installs a notification handler that is called when IOKit detects a service with the class name &lt;code class=&quot;highlighter-rouge&quot;&gt;AppleSMC&lt;/code&gt; has been registered.  In the call to &lt;code class=&quot;highlighter-rouge&quot;&gt;IOService::addNotification()&lt;/code&gt; shown in Figure 2 the first argument is the address of the hanlder to be called.  This handler is labelled as &lt;code class=&quot;highlighter-rouge&quot;&gt;notificationHanlder&lt;/code&gt; in Figure 2 and not listed in Table 1 (it was a false negative); its located at address &lt;code class=&quot;highlighter-rouge&quot;&gt;00000B1A&lt;/code&gt; with a default name in IDA of &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B1A&lt;/code&gt;. &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B1A&lt;/code&gt; isn’t all that interesting, all it does is wrap &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt; dropping some arguments in the process.&lt;/p&gt;
+
+&lt;h2 id=&quot;the-notification-handler&quot;&gt;The Notification Handler&lt;/h2&gt;
+
+&lt;p&gt;When an IOService registers the AppleSMC class the code in &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt; will be notified.  This function begins by calling &lt;code class=&quot;highlighter-rouge&quot;&gt;OSMetaClassBase::safeMetaCast()&lt;/code&gt; to cast the incoming service into an AppleSMC service.  Note that Apple’s documentation states that developers should not call OSMetaClassBase methods directly and should instead use provided macros.  In this case, the call &lt;code class=&quot;highlighter-rouge&quot;&gt;safeMetaCast()&lt;/code&gt; was likely generated by using the &lt;code class=&quot;highlighter-rouge&quot;&gt;OSDynamicCast&lt;/code&gt; macro which Apple lists as a valid macro to be used by developers.&lt;/p&gt;
+
+&lt;p&gt;The next block in &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt;, shown in Figure 3, is where things actually start.&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-03.png&quot; width=&quot;30%&quot; /&gt;
+&lt;figcaption&gt;Figure 3: Querying SMC for key&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;Since C++ is horribly annoying to reverse due to all the indirect calls, rather than figuring out what method is represented by &lt;code class=&quot;highlighter-rouge&quot;&gt;rax+850h&lt;/code&gt; I turned to Google.  Searching for &lt;code class=&quot;highlighter-rouge&quot;&gt;OSK0&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;OSK1&lt;/code&gt; turns up an &lt;a href=&quot;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&quot;&gt;article&lt;/a&gt; posted by Amit Singh.  In it he talks briefly about an older version of the DSMOS kernel extenion and also provides code that uses the &lt;code class=&quot;highlighter-rouge&quot;&gt;OSK0&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;OSK1&lt;/code&gt; strings to query the SMC for two keys.  Once these keys have been acquired the kernel extension then computes a SHA-256 hash and compares to a value stored in memory.  If this comparison fails, an error is printed (not shown).&lt;/p&gt;
+
+&lt;p&gt;If the hashes match then we skip to the block shown in Figure 4.&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-04.png&quot; width=&quot;30%&quot; /&gt;
+&lt;figcaption&gt;Figure 4: Installing DSMOS hook&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;The first part of this basic block takes the address of &lt;code class=&quot;highlighter-rouge&quot;&gt;byte_3AA4&lt;/code&gt; and our keys returned from the SMC then calls &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1616&lt;/code&gt;.  If you look at &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1616&lt;/code&gt; you’ll see it contains a couple loops and a bunch of byte manipulation I didn’t want to reverse.  Looking at where &lt;code class=&quot;highlighter-rouge&quot;&gt;byte_3AA4&lt;/code&gt; is used you’ll see it is used in two places: here in &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt; and in &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_D30&lt;/code&gt;.  Let’s wait a bit to see how it is used before figuring out how it is generated.&lt;/p&gt;
+
+&lt;p&gt;After the call to &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1616&lt;/code&gt; we have two AES decryption keys set.  The first key is the value returned from the SMC when queried with &lt;code class=&quot;highlighter-rouge&quot;&gt;OSK0&lt;/code&gt; and the second key is the value returned when &lt;code class=&quot;highlighter-rouge&quot;&gt;OSK1&lt;/code&gt; is used to query the SMC.  Finally, we see a global variable named &lt;code class=&quot;highlighter-rouge&quot;&gt;initialized&lt;/code&gt; set to 1 and a call to &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform_hook&lt;/code&gt; with the address of &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_D30&lt;/code&gt; as a parameter.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;table style=&quot;border-spacing: 0&quot;&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td class=&quot;gutter gl&quot; style=&quot;text-align: right&quot;&gt;&lt;pre class=&quot;lineno&quot;&gt;1
+2
+3
+4
+5
+6
+7
+8&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;dsmos_page_transform_hook&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dsmos_page_transform_hook_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;hook&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;DSMOS has arrived&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;cm&quot;&gt;/* set the hook now - new callers will run with it */&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;dsmos_hook&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;hook&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;Listing 1: Source code for &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform_hook&lt;/code&gt; from XNU source&lt;/p&gt;
+
+&lt;p&gt;Searching for &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform_hook&lt;/code&gt; in the XNU source we find the code in Listing 1.  This is a pretty simple funciton that simply sets the value of &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_hook&lt;/code&gt; to the provided function address.&lt;/p&gt;
+
+&lt;h2 id=&quot;usage-of-dsmoshook-in-xnu&quot;&gt;Usage of &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_hook&lt;/code&gt; in XNU&lt;/h2&gt;
+
+&lt;p&gt;At this point we will take step briefly away from IDA and kernel extension turning our attention to the XNU source.  For this work I used the source of XNU 3248.60.10 which is the version used by Mac OS X 10.11.6.  If you haven’t done so already, you can download the source from &lt;a href=&quot;http://opensource.apple.com/release/os-x-10116/&quot;&gt;http://opensource.apple.com/release/os-x-10116/&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;As we saw, &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform_hook&lt;/code&gt; simply set the value of &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_hook&lt;/code&gt;.  Continuing from here we find that &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_hook&lt;/code&gt; is only used in &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform_hook&lt;/code&gt; as we saw and in &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform&lt;/code&gt; (Listing 2).&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;table style=&quot;border-spacing: 0&quot;&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td class=&quot;gutter gl&quot; style=&quot;text-align: right&quot;&gt;&lt;pre class=&quot;lineno&quot;&gt;1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;dsmos_page_transform&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;from&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;to&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;unsigned&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;long&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;long&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;src_offset&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ops&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;static&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;boolean_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;first_wait&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;TRUE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dsmos_hook&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;first_wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;first_wait&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;FALSE&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Waiting for DSMOS...&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;   
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;KERN_ABORTED&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dsmos_hook&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;from&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;to&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;src_offset&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ops&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;Listing 2: Usage of &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_hook&lt;/code&gt; by XNU&lt;/p&gt;
+
+&lt;p&gt;After ensuring &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_hook&lt;/code&gt; the code in LIsting 2 just calls the hook with the parameters passed to &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform&lt;/code&gt;.  This approach allows Apple some flexibility and opens up the opportunity to have multiple hooks in the future. Once again searching the XNU source, we see that the only use of &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform&lt;/code&gt; is in a function called &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect_dsmos_segment&lt;/code&gt;.  I have not included the source of &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect_dsmos_segment&lt;/code&gt; since it is a bit longer and also not very exciting.  The most interesting part about it is that it checks to see that the segment is long enough before attempting to call &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform&lt;/code&gt; on it.&lt;/p&gt;
+
+&lt;p&gt;Continuing along, &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect_dsmos_segment&lt;/code&gt; is only called by &lt;code class=&quot;highlighter-rouge&quot;&gt;load_segment&lt;/code&gt;.  &lt;code class=&quot;highlighter-rouge&quot;&gt;load_segment&lt;/code&gt; is a much larger function and is not shown in its entirety but the relevant portion is shown in Listing 3.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;table style=&quot;border-spacing: 0&quot;&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td class=&quot;gutter gl&quot; style=&quot;text-align: right&quot;&gt;&lt;pre class=&quot;lineno&quot;&gt;1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;scp&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;SG_PROTECTED_VERSION_1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;unprotect_dsmos_segment&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;file_start&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                          &lt;span class=&quot;n&quot;&gt;file_end&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;file_start&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                          &lt;span class=&quot;n&quot;&gt;vp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                          &lt;span class=&quot;n&quot;&gt;pager_offset&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                          &lt;span class=&quot;n&quot;&gt;map&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                          &lt;span class=&quot;n&quot;&gt;vm_start&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                          &lt;span class=&quot;n&quot;&gt;vm_end&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;vm_start&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;!=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;LOAD_SUCCESS&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;Listing 3: Call to &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect_dsmos_segment&lt;/code&gt; from &lt;code class=&quot;highlighter-rouge&quot;&gt;load_segment&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;The interesting part of the code in Listing 3 is that &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect_dsmos_segment&lt;/code&gt; is only called on segments with the &lt;code class=&quot;highlighter-rouge&quot;&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set.  As mentioned earlier, macOS only includes a few binaries with this flag set such as Finder, Dock, and loginwindow.&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-05.png&quot; width=&quot;80%&quot; /&gt;
+&lt;figcaption&gt;Figure 5: Main functionality of hook function&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;h2 id=&quot;the-hook-implementation&quot;&gt;The Hook Implementation&lt;/h2&gt;
+
+&lt;p&gt;At this point we know that the DSMOS kernel extension queries the SMC for a pair of keys, initializes some AES decryption contexts and global variables, then installs a hook by calling &lt;code class=&quot;highlighter-rouge&quot;&gt;dsmos_page_transform_hook&lt;/code&gt;.  We also know that the Mach-O loader in the kernel will call this hook when it finds a segment with the &lt;code class=&quot;highlighter-rouge&quot;&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set.  The next question then is: what does the hook installed by the DSMOS kernel extension actually do?&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-05.png&quot; width=&quot;80%&quot; /&gt;
+&lt;figcaption&gt;Figure 5: Main functionality of hook function&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;Prior to the code shown in Figure 5 is the function prologue and setting of a stack cookie; after the code is the checking of the stack cookie and function epilogue.  The code shown starts by checking to see if the initialization flag is set.  This is the same initialization flag we saw being set in &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt; (see Figure 4).  If this flag is not set the function exits, otherwise it enters a series of checks to identify which kernel is calling the hook.  Searching the XNU source you can find the constant &lt;code class=&quot;highlighter-rouge&quot;&gt;0x2e69cf40&lt;/code&gt; in the implementation of &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect_dsmos_segment&lt;/code&gt; as shown in Listing 4.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;table style=&quot;border-spacing: 0&quot;&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td class=&quot;gutter gl&quot; style=&quot;text-align: right&quot;&gt;&lt;pre class=&quot;lineno&quot;&gt;1
+2
+3
+4
+5
+6
+7
+8&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;                &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;pager_crypt_info&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;crypt_info&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;crypt_info&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;page_decrypt&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;dsmos_page_transform&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;crypt_info&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;crypt_ops&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;crypt_info&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;crypt_end&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#pragma unused(vp, macho_offset)
+&lt;/span&gt;                &lt;span class=&quot;n&quot;&gt;crypt_info&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;crypt_ops&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0x2e69cf40&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;vm_map_offset_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;crypto_backing_offset&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;crypto_backing_offset&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;cm&quot;&gt;/* i.e. use map entry's offset */&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;Listing 4: XNU setting value of &lt;code class=&quot;highlighter-rouge&quot;&gt;crypt_info.crypt_ops&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;As Figure 5 shows, there are three basic cases implemented in the hook: no protection, an old kernel, and a new kernel.  The basic block responsible for each case is labelled accordingly.  I did not try to figure out which kernels mapped to which version however if you read &lt;a href=&quot;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&quot;&gt;the article by Amit Singh&lt;/a&gt; you’ll notice that he talks about the method where each half of the page is encrypted with one of the SMC keys.  In our kernel extension this corresponds to the &lt;code class=&quot;highlighter-rouge&quot;&gt;old_kernel&lt;/code&gt; basic block.&lt;/p&gt;
+
+&lt;p&gt;The method currently in use by Apple starts at the basic block labelled as &lt;code class=&quot;highlighter-rouge&quot;&gt;new_kernel&lt;/code&gt; in Figure 5.  In it we see an 8 byte buffer is zeroed then a call is made to a function I’ve called &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect&lt;/code&gt; (named &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1734&lt;/code&gt; by IDA originally).  Looking at the parameters to &lt;code class=&quot;highlighter-rouge&quot;&gt;unprotect&lt;/code&gt; we see it takes the global buffer &lt;code class=&quot;highlighter-rouge&quot;&gt;byte_3AA4&lt;/code&gt; we saw earlier, the source buffer containing the page to be transformed, and the destination buffer to store the transformed page in among other parameters.&lt;/p&gt;
+
+&lt;p&gt;This is the point in our reversing where things become very tedious since Apple has moved away from using AES to encrypt the pages to a custom method composed of many byte operations (e.g. shift left/right, logical/exclusive or).&lt;/p&gt;
+
+&lt;h2 id=&quot;unprotecting-a-protected-page&quot;&gt;Unprotecting a Protected Page&lt;/h2&gt;
+
+&lt;p&gt;To properly set expectations, due to the tedious nature of this protection mechanism and me being somewhat satisfied with what I’ve learned so far I did not go through the full exercise of reversing Apple’s “unprotect” method.  Originally I had intended to write a program that would be able to apply the transform to a given binary but that program is only partially completed and does not work.  So, with expectations set sufficiently low lets get a feel for the implementation and a couple ways of approaching it.&lt;/p&gt;
+
+&lt;p&gt;First lets step back briefly.  Remember we saw the global variable &lt;code class=&quot;highlighter-rouge&quot;&gt;byte_3AA4&lt;/code&gt; being initialized in &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_B2A&lt;/code&gt; and that I had said the code for that was also incredibly tediuous? Well, thanks to the ability to dump memory from the kernel through the debugger we don’t need to reverse it at all.  We just need to connect to a running kernel and ask it politely.&lt;/p&gt;
+
+&lt;h3 id=&quot;dumping-byte3aa4-from-a-running-kernel&quot;&gt;Dumping &lt;code class=&quot;highlighter-rouge&quot;&gt;byte_3AA4&lt;/code&gt; From a Running Kernel&lt;/h3&gt;
+
+&lt;p&gt;If you are unclear about how to use the kernel debugger then check out my &lt;a href=&quot;http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html&quot;&gt;previous post&lt;/a&gt;.  To get started, on your remote machine start the debugger by hitting the NMI keys (left command, right command, and power together) then connect to the debugger from your local machine.  The following lldb sessions shows the steps all put together.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-linenos&quot; data-lang=&quot;linenos&quot;&gt;(lldb) kdp-remote 192.168.42.101
+Version: Darwin Kernel Version 16.0.0: Fri Aug  5 19:25:15 PDT 2016; root:xnu-3789.1.24~6/DEVELOPMENT_X86_64; UUID=4F6F13D1-366B-3A79-AE9C-4
+4484E7FAB18; stext=0xffffff802b000000
+Kernel UUID: 4F6F13D1-366B-3A79-AE9C-44484E7FAB18
+Load Address: 0xffffff802b000000
+
+...
+
+Process 1 stopped
+* thread #2: tid = 0x00b8, 0xffffff802b39a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513, name = '0xffffff8
+037046ee0', queue = '0x0', stop reason = signal SIGSTOP
+    frame #0: 0xffffff802b39a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513 [opt]
+(lldb) showallkexts
+OverflowError: long too big to convert
+UUID                                 kmod_info            address              size                  id  refs TEXT exec            size     
+                         version name                          
+
+...
+
+B97F871A-44FD-3EA4-BC46-8FD682118C79 0xffffff7fadf449a0   0xffffff7fadf41000   0x5000               130     0 0xffffff7fadf41000   0x5000   
+                           7.0.0 com.apple.Dont_Steal_Mac_OS_X 
+
+...
+
+(lldb) memory read --force --binary --outfile byte_3AA4.bin 0xffffff7fadf44aa4 0xffffff7fadf44aa4+4172 
+4172 bytes written to '/Users/dean/Sites/lightbulbone.github.io/byte_3AA4.bin'&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;We start out by connecting to the remote host using the &lt;code class=&quot;highlighter-rouge&quot;&gt;kdp-remote&lt;/code&gt; command.  Once everything has loaded we can get the address of the DSMOS kernel extension in memory using the &lt;code class=&quot;highlighter-rouge&quot;&gt;showallkexts&lt;/code&gt; command.  In my case the base address is &lt;code class=&quot;highlighter-rouge&quot;&gt;0xffffff7fadf41000&lt;/code&gt;.  We then read the memory at address &lt;code class=&quot;highlighter-rouge&quot;&gt;0xffffff7fadf44aa4&lt;/code&gt; which is the extension base address plus the offset of &lt;code class=&quot;highlighter-rouge&quot;&gt;0x3aa4&lt;/code&gt;; we read 4172 bytes since that is the size of the buffer.&lt;/p&gt;
+
+&lt;p&gt;If you were writing a program to unprotect binaries you could use this extracted binary blob rather than trying to reverse the initialization algorithm.&lt;/p&gt;
+
+&lt;h3 id=&quot;emulating-the-unprotect-algorithm&quot;&gt;Emulating the Unprotect Algorithm&lt;/h3&gt;
+
+&lt;p&gt;Due to the tedious nature of the algorithm used to “unprotect” a page I decided to try using the &lt;a href=&quot;http://www.unicorn-engine.org/&quot;&gt;Unicorn Engine&lt;/a&gt; to emulate it.  This effort largely failed because it meant I would have to set up memory in Unicorn the same way as it is in the kernel extension and, as I said, the motivation wasn’t quite there.  As far as I know this is possible however it to can be rather tedious; especially in cases where the algorithm isn’t as self-contained as in this case.  Using an IDA plugin such as &lt;a href=&quot;https://github.com/cseagle/sk3wldbg&quot;&gt;sk3wldbg&lt;/a&gt; may help however I was not aware of it at the time.&lt;/p&gt;
+
+&lt;h3 id=&quot;reversing-the-unprotect-algorithm&quot;&gt;Reversing the Unprotect Algorithm&lt;/h3&gt;
+
+&lt;p&gt;In the end I just sat down and started working through the algorithm in IDA.  I did begin to write a program to unprotect before my motivation to work through the tedious code fell through the floor.  For me, looking at DSMOS was an opportunity to learn what a kernel module I’ve known about for many years and become more familiar with the macOS kernel.  That being said a few things a worth pointing out.&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-06.png&quot; width=&quot;65%&quot; /&gt;
+&lt;figcaption&gt;Figure 6: Loop found in sub_1734&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;In Figure 6 a portion of &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_1734&lt;/code&gt; is shown.  In it we see the first eight bytes of the &lt;code class=&quot;highlighter-rouge&quot;&gt;from&lt;/code&gt; pointer (stored in &lt;code class=&quot;highlighter-rouge&quot;&gt;r14&lt;/code&gt;) being used to build a value to pass to &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_125A&lt;/code&gt;.&lt;/p&gt;
+
+&lt;center&gt;
+&lt;figure&gt;
+&lt;img src=&quot;/assets/images/2016/10/DSMOS-07.png&quot; width=&quot;20%&quot; /&gt;
+&lt;figcaption&gt;Figure 7: Unrolled loop in sub_125A&lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/center&gt;
+
+&lt;p&gt;And, in Figure 7 we see part of &lt;code class=&quot;highlighter-rouge&quot;&gt;sub_125A&lt;/code&gt;.  In this part we see the first two iterations of an unrolled loop.  The point of Figures 6 and 7 is to show some common constructs that come up when reversing code.  If you’re not familiar with these constructs it may help to write some code yourself and then analyze the binary after compilation.&lt;/p&gt;
+
+&lt;h2 id=&quot;summary&quot;&gt;Summary&lt;/h2&gt;
+
+&lt;p&gt;The intent of this post was to reverse engineer the DSMOS kernel extension in macOS.  The goal was to understand what functionality the DSMOS extension provided to the kernel and to become more familiar with the XNU kernel.  We also touched on IOKit briefly as well as a possible application of the Unicorn engine.&lt;/p&gt;
+
+&lt;p&gt;If you have any questions or comments, please feel to reach out to me on Twitter &lt;a href=&quot;https://twitter.com/lightbulbone&quot;&gt;@lightbulbone&lt;/a&gt;.&lt;/p&gt;
+
+</description>
+        <pubDate>Tue, 11 Oct 2016 13:45:00 -0700</pubDate>
+        <link>https://www.lightbulbone.com/2016/10/11/dsmos-kext.html</link>
+        <guid isPermaLink="true">https://www.lightbulbone.com/2016/10/11/dsmos-kext.html</guid>
+        
+        
+      </item>
     
       <item>
         <title>Introduction to macOS Kernel Debugging</title>
@@ -919,28 +1251,6 @@ end run
         <pubDate>Fri, 19 Oct 2012 13:42:06 -0700</pubDate>
         <link>https://www.lightbulbone.com/2012/10/19/fuzzy-ios-messages.html</link>
         <guid isPermaLink="true">https://www.lightbulbone.com/2012/10/19/fuzzy-ios-messages.html</guid>
-        
-        
-      </item>
-    
-      <item>
-        <title>Rails - Hex Rays Plugin Contest 2012</title>
-        <description>&lt;p&gt;This year I decided to try submitting to the annual Hex Rays plugin contest.  I’m pleased to announce my plugin, Rails.&lt;/p&gt;
-
-&lt;p&gt;Rails is a plugin that simplifies the task of working with multiple instances of IDA Pro.  There are three main advantages to Rails.  First, you won’t go insane trying to work with several instances at once.  Second, your project databases remain uncluttered from the addition of linked libraries and other bits of code.  And third, you don’t need to continuously reverse the same libraries over and over again.&lt;/p&gt;
-
-&lt;p&gt;The plugin is pretty straight forward to use.  Once you’ve opened up a database, just go to Edit-&amp;gt;Plugins-&amp;gt;Rails and enable it.  This will cause a new panel to appear in IDA which lists any other open instances of IDA that are using Rails as well as output from Rails.  With it you can select a function and then see the associated comments or jump to its definition where ever that may be.  Another handy feature is the ability to see the list of open instances and just jump to them by double clicking there name in the list.  For a demo check out the video below.&lt;/p&gt;
-
-&lt;p&gt;If you’d like to work with the code it is available on Github at&lt;/p&gt;
-
-&lt;p&gt;https://github.com/lightbulbone/rails&lt;/p&gt;
-
-&lt;p&gt;.  Note that the plugin currently only builds on Mac OS X; however, I will (very soon) make a build script for Windows.&lt;/p&gt;
-
-</description>
-        <pubDate>Fri, 14 Sep 2012 07:25:42 -0700</pubDate>
-        <link>https://www.lightbulbone.com/2012/09/14/rails-hex-rays-plugin-contest-2012.html</link>
-        <guid isPermaLink="true">https://www.lightbulbone.com/2012/09/14/rails-hex-rays-plugin-contest-2012.html</guid>
         
         
       </item>

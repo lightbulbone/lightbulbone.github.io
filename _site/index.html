@@ -52,6 +52,15 @@
     <div class="col-sm-8 blog-main">
       
         <div class="blog-post">
+          <h2 class="blog-post-title">Reversing a macOS Kernel Extension</h2>
+          <p class="blog-post-meta">11 October 2016</p>
+          <p><p>In my <a href="http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html">last post</a> I covered the basics of kernel debugging in macOS.  In this post we will put some of that to use and work through the process of reversing a macOS kernel module.</p>
+
+</p>
+          <a class="post-link" href="/2016/10/11/dsmos-kext.html">Read more</a>
+        </div>
+      
+        <div class="blog-post">
           <h2 class="blog-post-title">Introduction to macOS Kernel Debugging</h2>
           <p class="blog-post-meta">04 October 2016</p>
           <p><p>In macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the <code class="highlighter-rouge">SG_PROTECTED_VERSION_1</code> flag set on their <code class="highlighter-rouge">__TEXT</code> segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point <a href="http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/">played a role in the myth</a> that Apple had included a TPM in their Mac hardware.</p>
