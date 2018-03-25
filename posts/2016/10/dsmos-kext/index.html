@@ -1,0 +1,508 @@
+<!doctype html>
+
+<html lang="en-us">
+
+<head>
+  <title>LightBulbOne</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="The HTML5 Herald" />
+  <meta name="author" content="Dean Pucsek" />
+  <meta name="generator" content="Hugo 0.37.1" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/7.0.0/normalize.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto+Slab|Ruda" />
+  <link rel="stylesheet" type="text/css" href="/css/styles.css" />
+</head>
+
+<body>
+  <div id="container">
+    <header>
+      <h1>
+                <a href="/">LightBulbOne</a>
+            </h1>
+
+      <ul id="social-media">
+        
+        <li><a href="https://twitter.com/lightbulbone"><i class="fa fa-twitter fa-lg" aria-hidden="true"></i></a></li>
+          
+        <li><a href="https://github.com/lightbulbone"><i class="fa fa-github fa-lg" aria-hidden="true"></i></a></li>
+           
+      </ul>
+      
+      <p><em>Reverse engineering, program analysis, and signal processing</em></p>
+      
+    </header>
+
+    
+<nav>
+    <ul>
+        
+        <li>
+            <a class="" href="/about/">
+                <i class="fa-li fa  fa-lg"></i><span>About Me</span>
+            </a>
+        </li>
+        
+        <li>
+            <a class="" href="/projects/">
+                <i class="fa-li fa  fa-lg"></i><span>Focus Areas</span>
+            </a>
+        </li>
+        
+        <li>
+            <a class="active" href="/posts/">
+                <i class="fa-li fa  fa-lg"></i><span>Posts</span>
+            </a>
+        </li>
+        
+    </ul>
+</nav>
+
+    <main>
+
+
+
+
+<article>
+
+    <h1>Reversing a macOS Kernel Extension</h1>
+
+    
+        <aside>
+    <ul>
+        <li>
+            <time class="post-date" datetime="2016-10-11T18:25:50-08:00">Oct 11, 2016</time>
+        </li>
+        
+        
+
+        
+        <li>
+            <em>
+                
+                    
+                    <a href="/tags/kernel/">#kernel</a>
+                
+                    , 
+                    <a href="/tags/macos/">#macOS</a>
+                
+                    , 
+                    <a href="/tags/lldb/">#lldb</a>
+                
+                    , 
+                    <a href="/tags/ida/">#IDA</a>
+                
+            </em>
+        </li>
+        
+
+        
+    </ul>
+</aside>
+
+    
+
+    
+
+<p>In my <a href="http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html">last post</a> I covered the basics of kernel debugging in macOS.  In this post we will put some of that to use and work through the process of reversing a macOS kernel module.</p>
+
+<p>As I said in my last post, in macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the <code>SG_PROTECTED_VERSION_1</code> flag set on their <code>__TEXT</code> segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  My goal for this post is to simply work through the kernel module with the intent of discovering its functionality and use it as an opportunity to learn a bit about kernel debugging.</p>
+
+<p>If you&rsquo;d like to follow along I pulled the DSMOS module off of a laptop running macOS Sierra Beta (16A286a).  Based on cursory looks at a couple copies from different versions of macOS it hasn&rsquo;t changed much recently so you should be able to follow along with a copy from Mac OS X 10.11 or macOS Sierra.  As you&rsquo;ll see in the screenshots, I used IDA Pro for this reversing however using a program like Hopper would be fine as well.</p>
+
+<h2 id="first-look">First Look</h2>
+
+<p>At a glance, the DSMOS kernel module is fairly simple in terms of number of functions.  It has 25 functions of which we only really care about 6.  Most of the functions we don&rsquo;t care about are constructors or destructors.  Admittedly I haven&rsquo;t taken the time to understand constructors and destructors used by a kernel module sp will be skipping them in this post.</p>
+
+<p>Typically when I first look at a binary I start by looking at the strings in the binary.</p>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-01.png" alt="Strings in DSMOS kernel module" />
+    
+    
+    <figcaption>
+        <p>
+        Strings in DSMOS kernel module
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<p>As seen in Figure 1, there really aren&rsquo;t that many strings and they aren&rsquo;t all that exciting.  The most interesting is probably the string &ldquo;AppleSMC&rdquo; which is an indicator that this module interacts with the System Management Controller.</p>
+
+<p>Given that there are so few functions in this binary my approach was to simply go through each of them, have a quick look at the control flow graph (CFG) for a rough estimate of complexity, and put the function either on the &ldquo;care&rdquo; or &ldquo;don&rsquo;t care&rdquo; list.  Doing this I ended up with 9 functions of interest (see Table 1).</p>
+
+<table>
+<thead>
+<tr>
+<th>Address</th>
+<th>Name</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>00000A9E</code></td>
+<td><code>sub_A9E</code></td>
+</tr>
+
+<tr>
+<td><code>00000B2A</code></td>
+<td><code>sub_B2A</code></td>
+</tr>
+
+<tr>
+<td><code>00000D30</code></td>
+<td><code>sub_D30</code></td>
+</tr>
+
+<tr>
+<td><code>00000E9E</code></td>
+<td><code>sub_E9E</code></td>
+</tr>
+
+<tr>
+<td><code>0000125A</code></td>
+<td><code>sub_125A</code></td>
+</tr>
+
+<tr>
+<td><code>00001616</code></td>
+<td><code>sub_1616</code></td>
+</tr>
+
+<tr>
+<td><code>00001734</code></td>
+<td><code>sub_1734</code></td>
+</tr>
+
+<tr>
+<td><code>00001C48</code></td>
+<td><code>sub_1C48</code></td>
+</tr>
+
+<tr>
+<td><code>00001C94</code></td>
+<td><code>sub_1C94</code></td>
+</tr>
+</tbody>
+</table>
+
+<p>Table 1: Potentially interesting function addresses and associated names.</p>
+
+<p>With these functions as starting points, the next step is to start working through them.  At this point our goal is identify what each functionality each provides.</p>
+
+<h2 id="registering-an-ioservice-notification-handler">Registering an IOService Notification Handler</h2>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-02.png" alt="Main block of code in sub_A9E" width="100%" />
+    
+    
+    <figcaption>
+        <p>
+        Main block of code in sub_A9E
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<p>The relevant block of code from <code>sub_A9E</code> is shown in Figure 2.  In words, this function first retrieves a matching dictionary for the <code>AppleSMC</code> service then installs a notification handler that is called when IOKit detects a service with the class name <code>AppleSMC</code> has been registered.  In the call to <code>IOService::addNotification()</code> shown in Figure 2 the first argument is the address of the hanlder to be called.  This handler is labelled as <code>notificationHanlder</code> in Figure 2 and not listed in Table 1 (it was a false negative); its located at address <code>00000B1A</code> with a default name in IDA of <code>sub_B1A</code>. <code>sub_B1A</code> isn&rsquo;t all that interesting, all it does is wrap <code>sub_B2A</code> dropping some arguments in the process.</p>
+
+<h2 id="the-notification-handler">The Notification Handler</h2>
+
+<p>When an IOService registers the AppleSMC class the code in <code>sub_B2A</code> will be notified.  This function begins by calling <code>OSMetaClassBase::safeMetaCast()</code> to cast the incoming service into an AppleSMC service.  Note that Apple&rsquo;s documentation states that developers should not call OSMetaClassBase methods directly and should instead use provided macros.  In this case, the call <code>safeMetaCast()</code> was likely generated by using the <code>OSDynamicCast</code> macro which Apple lists as a valid macro to be used by developers.</p>
+
+<p>The next block in <code>sub_B2A</code>, shown in Figure 3, is where things actually start.</p>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-03.png" alt="Querying SMC for key" />
+    
+    
+    <figcaption>
+        <p>
+        Querying SMC for key
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<p>Since C++ is horribly annoying to reverse due to all the indirect calls, rather than figuring out what method is represented by <code>rax+850h</code> I turned to Google.  Searching for <code>OSK0</code> and <code>OSK1</code> turns up an <a href="http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/">article</a> posted by Amit Singh.  In it he talks briefly about an older version of the DSMOS kernel extenion and also provides code that uses the <code>OSK0</code> and <code>OSK1</code> strings to query the SMC for two keys.  Once these keys have been acquired the kernel extension then computes a SHA-256 hash and compares to a value stored in memory.  If this comparison fails, an error is printed (not shown).</p>
+
+<p>If the hashes match then we skip to the block shown in Figure 4.</p>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-04.png" alt="Installing DSMOS hook" />
+    
+    
+    <figcaption>
+        <p>
+        Installing DSMOS hook
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<p>The first part of this basic block takes the address of <code>byte_3AA4</code> and our keys returned from the SMC then calls <code>sub_1616</code>.  If you look at <code>sub_1616</code> you&rsquo;ll see it contains a couple loops and a bunch of byte manipulation I didn&rsquo;t want to reverse.  Looking at where <code>byte_3AA4</code> is used you&rsquo;ll see it is used in two places: here in <code>sub_B2A</code> and in <code>sub_D30</code>.  Let&rsquo;s wait a bit to see how it is used before figuring out how it is generated.</p>
+
+<p>After the call to <code>sub_1616</code> we have two AES decryption keys set.  The first key is the value returned from the SMC when queried with <code>OSK0</code> and the second key is the value returned when <code>OSK1</code> is used to query the SMC.  Finally, we see a global variable named <code>initialized</code> set to 1 and a call to <code>dsmos_page_transform_hook</code> with the address of <code>sub_D30</code> as a parameter.</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#888;font-weight:bold">void</span>
+<span style="color:#06b;font-weight:bold">dsmos_page_transform_hook</span>(dsmos_page_transform_hook_t hook)
+{
+
+    printf(<span style="color:#d20;background-color:#fff0f0"></span><span style="color:#d20;background-color:#fff0f0">&#34;DSMOS has arrived</span><span style="color:#04d;background-color:#fff0f0">\n</span><span style="color:#d20;background-color:#fff0f0">&#34;</span>);
+    <span style="color:#888">/* set the hook now - new callers will run with it */</span>
+    dsmos_hook = hook;
+}</code></pre></div>
+
+<p>Listing 1: Source code for <code>dsmos_page_transform_hook</code> from XNU source</p>
+
+<p>Searching for <code>dsmos_page_transform_hook</code> in the XNU source we find the code in Listing 1.  This is a pretty simple funciton that simply sets the value of <code>dsmos_hook</code> to the provided function address.</p>
+
+<h2 id="usage-of-dsmos-hook-in-xnu">Usage of <code>dsmos_hook</code> in XNU</h2>
+
+<p>At this point we will take step briefly away from IDA and kernel extension turning our attention to the XNU source.  For this work I used the source of XNU 3248.60.10 which is the version used by Mac OS X 10.11.6.  If you haven&rsquo;t done so already, you can download the source from <a href="http://opensource.apple.com/release/os-x-10116/">http://opensource.apple.com/release/os-x-10116/</a>.</p>
+
+<p>As we saw, <code>dsmos_page_transform_hook</code> simply set the value of <code>dsmos_hook</code>.  Continuing from here we find that <code>dsmos_hook</code> is only used in <code>dsmos_page_transform_hook</code> as we saw and in <code>dsmos_page_transform</code> (Listing 2).
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#888;font-weight:bold">int</span>
+<span style="color:#06b;font-weight:bold">dsmos_page_transform</span>(<span style="color:#080;font-weight:bold">const</span> <span style="color:#888;font-weight:bold">void</span>* from, <span style="color:#888;font-weight:bold">void</span> *to, <span style="color:#888;font-weight:bold">unsigned</span> <span style="color:#888;font-weight:bold">long</span> <span style="color:#888;font-weight:bold">long</span> src_offset, <span style="color:#888;font-weight:bold">void</span> *ops)
+{
+    <span style="color:#080;font-weight:bold">static</span> boolean_t first_wait = TRUE;
+
+    <span style="color:#080;font-weight:bold">if</span> (dsmos_hook == <span style="color:#038">NULL</span>) {
+        <span style="color:#080;font-weight:bold">if</span> (first_wait) {
+            first_wait = FALSE;
+            printf(<span style="color:#d20;background-color:#fff0f0"></span><span style="color:#d20;background-color:#fff0f0">&#34;Waiting for DSMOS...</span><span style="color:#04d;background-color:#fff0f0">\n</span><span style="color:#d20;background-color:#fff0f0">&#34;</span>);
+        }   
+        <span style="color:#080;font-weight:bold">return</span> KERN_ABORTED;
+    }
+    <span style="color:#080;font-weight:bold">return</span> (*dsmos_hook) (from, to, src_offset, ops);
+}</code></pre></div></p>
+
+<p>Listing 2: Usage of <code>dsmos_hook</code> by XNU</p>
+
+<p>After ensuring <code>dsmos_hook</code> the code in LIsting 2 just calls the hook with the parameters passed to <code>dsmos_page_transform</code>.  This approach allows Apple some flexibility and opens up the opportunity to have multiple hooks in the future. Once again searching the XNU source, we see that the only use of <code>dsmos_page_transform</code> is in a function called <code>unprotect_dsmos_segment</code>.  I have not included the source of <code>unprotect_dsmos_segment</code> since it is a bit longer and also not very exciting.  The most interesting part about it is that it checks to see that the segment is long enough before attempting to call <code>dsmos_page_transform</code> on it.</p>
+
+<p>Continuing along, <code>unprotect_dsmos_segment</code> is only called by <code>load_segment</code>.  <code>load_segment</code> is a much larger function and is not shown in its entirety but the relevant portion is shown in Listing 3.
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#080;font-weight:bold">if</span> (scp-&gt;flags &amp; SG_PROTECTED_VERSION_1) {
+    ret = unprotect_dsmos_segment(file_start,
+                          file_end - file_start,
+                          vp,
+                          pager_offset,
+                          map,
+                          vm_start,
+                          vm_end - vm_start);
+    <span style="color:#080;font-weight:bold">if</span> (ret != LOAD_SUCCESS) {
+        <span style="color:#080;font-weight:bold">return</span> ret;
+    }
+}</code></pre></div></p>
+
+<p>Listing 3: Call to <code>unprotect_dsmos_segment</code> from <code>load_segment</code></p>
+
+<p>The interesting part of the code in Listing 3 is that <code>unprotect_dsmos_segment</code> is only called on segments with the <code>SG_PROTECTED_VERSION_1</code> flag set.  As mentioned earlier, macOS only includes a few binaries with this flag set such as Finder, Dock, and loginwindow.</p>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-05.png" alt="Main functionality of hook function" />
+    
+    
+    <figcaption>
+        <p>
+        Main functionality of hook function
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<h2 id="the-hook-implementation">The Hook Implementation</h2>
+
+<p>At this point we know that the DSMOS kernel extension queries the SMC for a pair of keys, initializes some AES decryption contexts and global variables, then installs a hook by calling <code>dsmos_page_transform_hook</code>.  We also know that the Mach-O loader in the kernel will call this hook when it finds a segment with the <code>SG_PROTECTED_VERSION_1</code> flag set.  The next question then is: what does the hook installed by the DSMOS kernel extension actually do?</p>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-05.png" alt="Main functionality of hook function" />
+    
+    
+    <figcaption>
+        <p>
+        Main functionality of hook function
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<p>Prior to the code shown in Figure 5 is the function prologue and setting of a stack cookie; after the code is the checking of the stack cookie and function epilogue.  The code shown starts by checking to see if the initialization flag is set.  This is the same initialization flag we saw being set in <code>sub_B2A</code> (see Figure 4).  If this flag is not set the function exits, otherwise it enters a series of checks to identify which kernel is calling the hook.  Searching the XNU source you can find the constant <code>0x2e69cf40</code> in the implementation of <code>unprotect_dsmos_segment</code> as shown in Listing 4.</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">                <span style="color:#080;font-weight:bold">struct</span> pager_crypt_info crypt_info;
+                crypt_info.page_decrypt = dsmos_page_transform;
+                crypt_info.crypt_ops = <span style="color:#038">NULL</span>;
+                crypt_info.crypt_end = <span style="color:#038">NULL</span>;
+<span style="color:#c00;font-weight:bold">#pragma unused(vp, macho_offset)
+</span><span style="color:#c00;font-weight:bold"></span>                crypt_info.crypt_ops = (<span style="color:#888;font-weight:bold">void</span> *)<span style="color:#00d;font-weight:bold">0x2e69cf40</span>;
+                vm_map_offset_t crypto_backing_offset;
+                crypto_backing_offset = -<span style="color:#00d;font-weight:bold">1</span>; <span style="color:#888">/* i.e. use map entry&#39;s offset */</span></code></pre></div>
+
+<p>Listing 4: XNU setting value of <code>crypt_info.crypt_ops</code></p>
+
+<p>As Figure 5 shows, there are three basic cases implemented in the hook: no protection, an old kernel, and a new kernel.  The basic block responsible for each case is labelled accordingly.  I did not try to figure out which kernels mapped to which version however if you read <a href="http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/">the article by Amit Singh</a> you&rsquo;ll notice that he talks about the method where each half of the page is encrypted with one of the SMC keys.  In our kernel extension this corresponds to the <code>old_kernel</code> basic block.</p>
+
+<p>The method currently in use by Apple starts at the basic block labelled as <code>new_kernel</code> in Figure 5.  In it we see an 8 byte buffer is zeroed then a call is made to a function I&rsquo;ve called <code>unprotect</code> (named <code>sub_1734</code> by IDA originally).  Looking at the parameters to <code>unprotect</code> we see it takes the global buffer <code>byte_3AA4</code> we saw earlier, the source buffer containing the page to be transformed, and the destination buffer to store the transformed page in among other parameters.</p>
+
+<p>This is the point in our reversing where things become very tedious since Apple has moved away from using AES to encrypt the pages to a custom method composed of many byte operations (e.g. shift left/right, logical/exclusive or).</p>
+
+<h2 id="unprotecting-a-protected-page">Unprotecting a Protected Page</h2>
+
+<p>To properly set expectations, due to the tedious nature of this protection mechanism and me being somewhat satisfied with what I&rsquo;ve learned so far I did not go through the full exercise of reversing Apple&rsquo;s &ldquo;unprotect&rdquo; method.  Originally I had intended to write a program that would be able to apply the transform to a given binary but that program is only partially completed and does not work.  So, with expectations set sufficiently low lets get a feel for the implementation and a couple ways of approaching it.</p>
+
+<p>First lets step back briefly.  Remember we saw the global variable <code>byte_3AA4</code> being initialized in <code>sub_B2A</code> and that I had said the code for that was also incredibly tediuous? Well, thanks to the ability to dump memory from the kernel through the debugger we don&rsquo;t need to reverse it at all.  We just need to connect to a running kernel and ask it politely.</p>
+
+<h3 id="dumping-byte-3aa4-from-a-running-kernel">Dumping <code>byte_3AA4</code> From a Running Kernel</h3>
+
+<p>If you are unclear about how to use the kernel debugger then check out my <a href="http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html">previous post</a>.  To get started, on your remote machine start the debugger by hitting the NMI keys (left command, right command, and power together) then connect to the debugger from your local machine.  The following lldb sessions shows the steps all put together.</p>
+
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-console" data-lang="console">(lldb) kdp-remote 192.168.42.101
+Version: Darwin Kernel Version 16.0.0: Fri Aug  5 19:25:15 PDT 2016; root:xnu-3789.1.24~6/DEVELOPMENT_X86_64; UUID=4F6F13D1-366B-3A79-AE9C-4
+4484E7FAB18; stext=0xffffff802b000000
+Kernel UUID: 4F6F13D1-366B-3A79-AE9C-44484E7FAB18
+Load Address: 0xffffff802b000000
+
+...
+
+Process 1 stopped
+* thread #2: tid = 0x00b8, 0xffffff802b39a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513, name = &#39;0xffffff8
+037046ee0&#39;, queue = &#39;0x0&#39;, stop reason = signal SIGSTOP
+    frame #0: 0xffffff802b39a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513 [opt]
+(lldb) showallkexts
+OverflowError: long too big to convert
+UUID                                 kmod_info            address              size                  id  refs TEXT exec            size     
+                         version name                          
+
+...
+
+B97F871A-44FD-3EA4-BC46-8FD682118C79 0xffffff7fadf449a0   0xffffff7fadf41000   0x5000               130     0 0xffffff7fadf41000   0x5000   
+                           7.0.0 com.apple.Dont_Steal_Mac_OS_X 
+
+...
+
+(lldb) memory read --force --binary --outfile byte_3AA4.bin 0xffffff7fadf44aa4 0xffffff7fadf44aa4+4172 
+4172 bytes written to &#39;/Users/dean/Sites/lightbulbone.github.io/byte_3AA4.bin&#39;</code></pre></div>
+
+<p>We start out by connecting to the remote host using the <code>kdp-remote</code> command.  Once everything has loaded we can get the address of the DSMOS kernel extension in memory using the <code>showallkexts</code> command.  In my case the base address is <code>0xffffff7fadf41000</code>.  We then read the memory at address <code>0xffffff7fadf44aa4</code> which is the extension base address plus the offset of <code>0x3aa4</code>; we read 4172 bytes since that is the size of the buffer.</p>
+
+<p>If you were writing a program to unprotect binaries you could use this extracted binary blob rather than trying to reverse the initialization algorithm.</p>
+
+<h3 id="emulating-the-unprotect-algorithm">Emulating the Unprotect Algorithm</h3>
+
+<p>Due to the tedious nature of the algorithm used to &ldquo;unprotect&rdquo; a page I decided to try using the <a href="http://www.unicorn-engine.org/">Unicorn Engine</a> to emulate it.  This effort largely failed because it meant I would have to set up memory in Unicorn the same way as it is in the kernel extension and, as I said, the motivation wasn&rsquo;t quite there.  As far as I know this is possible however it to can be rather tedious; especially in cases where the algorithm isn&rsquo;t as self-contained as in this case.  Using an IDA plugin such as <a href="https://github.com/cseagle/sk3wldbg">sk3wldbg</a> may help however I was not aware of it at the time.</p>
+
+<h3 id="reversing-the-unprotect-algorithm">Reversing the Unprotect Algorithm</h3>
+
+<p>In the end I just sat down and started working through the algorithm in IDA.  I did begin to write a program to unprotect before my motivation to work through the tedious code fell through the floor.  For me, looking at DSMOS was an opportunity to learn what a kernel module I&rsquo;ve known about for many years and become more familiar with the macOS kernel.  That being said a few things a worth pointing out.<br />
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-06.png" alt="Loop found in sub_1734" />
+    
+    
+    <figcaption>
+        <p>
+        Loop found in sub_1734
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+</p>
+
+<p>In Figure 6 a portion of <code>sub_1734</code> is shown.  In it we see the first eight bytes of the <code>from</code> pointer (stored in <code>r14</code>) being used to build a value to pass to <code>sub_125A</code>.</p>
+
+
+<figure>
+    
+        <img src="/images/2016/10/DSMOS-07.png" alt="Unrolled loop in sub_125A" />
+    
+    
+    <figcaption>
+        <p>
+        Unrolled loop in sub_125A
+        
+            
+        
+        </p> 
+    </figcaption>
+    
+</figure>
+
+
+<p>And, in Figure 7 we see part of <code>sub_125A</code>.  In this part we see the first two iterations of an unrolled loop.  The point of Figures 6 and 7 is to show some common constructs that come up when reversing code.  If you&rsquo;re not familiar with these constructs it may help to write some code yourself and then analyze the binary after compilation.</p>
+
+<h2 id="summary">Summary</h2>
+
+<p>The intent of this post was to reverse engineer the DSMOS kernel extension in macOS.  The goal was to understand what functionality the DSMOS extension provided to the kernel and to become more familiar with the XNU kernel.  We also touched on IOKit briefly as well as a possible application of the Unicorn engine.</p>
+
+<p>If you have any questions or comments, please feel to reach out to me on Twitter <a href="https://twitter.com/lightbulbone">@lightbulbone</a>.</p>
+
+
+</article>
+
+
+<section class="post-nav">
+    <ul>
+        
+        
+    </ul>
+</section>
+    
+
+
+
+
+
+</main>
+    <footer>
+        <h6> | 
+            Rendered by <a href="https://gohugo.io" title="Hugo">Hugo</a> |
+            <a href="https://lightbulbone.com/index.xml">Subscribe</a></h6>
+    </footer>
+</div>
+<script src="/js/scripts.js"></script>
+</body>
+
+</html>
