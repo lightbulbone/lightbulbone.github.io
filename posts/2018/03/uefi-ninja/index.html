@@ -1,0 +1,255 @@
+<!doctype html>
+
+<html lang="en-us">
+
+<head>
+  <title>LightBulbOne</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="The HTML5 Herald" />
+<meta name="author" content="Dean Pucsek" /><meta property="og:title" content="UEFI Ninja" />
+<meta property="og:description" content="As Wikipedia and its own Forum says, UEFI (Unified Extensible Firmware Interface) is a software layer situated between the operating system and platform firmware. It was developed as a replacement for the BIOS and provides an environment where developers can create applications and drivers for use before the operating system is loaded. UEFI is defined as a specification with a corresponding reference implementation named Tianocore.
+In order to better understand another target I am reversing it became clear that I needed to learn more about UEFI and reverse some aspects of it." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://lightbulbone.github.io/posts/2018/03/uefi-ninja/" />
+<meta property="article:published_time" content="2018-03-25T08:00:00-07:00" />
+<meta property="article:modified_time" content="2018-03-25T08:00:00-07:00" />
+
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="UEFI Ninja"/>
+<meta name="twitter:description" content="As Wikipedia and its own Forum says, UEFI (Unified Extensible Firmware Interface) is a software layer situated between the operating system and platform firmware. It was developed as a replacement for the BIOS and provides an environment where developers can create applications and drivers for use before the operating system is loaded. UEFI is defined as a specification with a corresponding reference implementation named Tianocore.
+In order to better understand another target I am reversing it became clear that I needed to learn more about UEFI and reverse some aspects of it."/>
+
+<meta name="generator" content="Hugo 0.65.3" />
+    
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" integrity="sha256-l85OmPOjvil/SOvVt3HnSSjzF1TUMyT9eV0c2BzEGzU=" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://lightbulbone.github.io/fontawesome/css/all.min.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto+Slab|Ruda" />
+  <link rel="stylesheet" type="text/css" href="/css/styles.css" /></head>
+
+<body>
+  <div id="container">
+    <header>
+      <h1>
+                <a href="/">LightBulbOne</a>
+            </h1>
+
+      <ul id="social-media">
+             <li>
+               <a href="https://github.com/lightbulbone" title="GitHub">
+               <i class="fab fa-github fa-lg"></i>
+               </a>
+             </li>
+             <li>
+               <a href="https://twitter.com/lightbulbone" title="Twitter">
+               <i class="fab fa-twitter fa-lg"></i>
+               </a>
+             </li>
+      </ul>
+      
+      <p><em>Reverse engineering, program analysis, and signal processing</em></p>
+      
+    </header>
+
+    
+<nav>
+    <ul>
+        
+        <li>
+            <a class="active" href="/posts/">
+                <i class="fa-li fa  fa-lg"></i><span>Posts</span>
+            </a>
+        </li>
+        
+    </ul>
+</nav>
+
+
+    <main>
+
+
+
+
+<article>
+
+    <h1>UEFI Ninja</h1>
+
+    
+      <aside>
+    <ul>
+        <li>
+            <time class="post-date" datetime="2018-03-25T08:00:00-07:00">Mar 25, 2018</time>
+        </li>
+        
+
+        
+        <li>
+            <em>
+                
+                    
+                    <a href="/tags/uefi">#UEFI</a>
+                
+                    , 
+                    <a href="/tags/ida">#IDA</a>
+                
+                    , 
+                    <a href="/tags/binary-ninja">#Binary Ninja</a>
+                
+            </em>
+        </li>
+        
+
+        <li>12 minutes read</li>
+    </ul>
+</aside>
+
+    
+
+    
+
+
+    <p>As <a href="https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface">Wikipedia</a> and its <a href="http://www.uefi.org/faq">own Forum</a> says, UEFI (Unified Extensible Firmware Interface) is a software layer situated between the operating system and platform firmware. It was developed as a replacement for the BIOS and provides an environment where developers can create applications and drivers for use before the operating system is loaded. UEFI is defined as a <a href="http://uefi.org/specifications">specification</a> with a corresponding reference implementation named <a href="https://www.tianocore.org/">Tianocore</a>.</p>
+<p>In order to better understand another target I am reversing it became clear that I needed to learn more about UEFI and reverse some aspects of it. This blog post discusses some of the basics of UEFI and tools available.</p>
+<h1 id="a-crash-course-in-uefi">A Crash Course in UEFI</h1>
+<p>As mentioned previously, UEFI is intended to replace the BIOS as well as provide an environment for developers to create pre-OS  applications and drivers. The UEFI specification borrows heavily from concepts and constructs present in the Microsoft Windows environment; for example, UEFI binaries are very closely related to Microsoft&rsquo;s PE-32/64 binary format. UEFI is natively capable of reading from devices, such as hard drives and flash drives, partitioned using the GPT scheme. The first partition on the device is referred to as the <strong>EFI System Partition (ESP)</strong> and may contain almost anything. Typically the ESP is where you&rsquo;ll find an OS loader but you may also find other assets such as firmware images, configuration files, and custom UEFI applications. The UEFI specification states that the ESP should be formatted as a FAT-32 partition.</p>
+<p>From a developers perspective, UEFI manifests itself as a C API designed around tables. This is a large, and much appreciated, departure from the interrupt driven programming interface used by BIOS. Vendors (operating system, hardware, or platform) may also expose functionality in addition to that provided by UEFI through a protocol-interface paradigm. Through this paradigm, vendors are able to use the same set of custom interfaces from all of their applications since the protocols are defined in a global namespace. Another point of note is that UEFI may expose services during boot, at runtime, or both.</p>
+<p>My target for this work is a MacBook Pro with TouchBar. I plan to cover that work in a future blog post but for now suffice it to say that I was interested in better understanding what happens before macOS is executed hence the need to investigate UEFI.</p>
+<h2 id="working-with-uefi-firmware">Working With UEFI Firmware</h2>
+<p>The first step to working with UEFI firmware is to get the firmware (obvious, I know). Apple has been nice to us by leaving a copy on the ESP under the path <code>EFI/APPLE/FIRMWARE</code> (e.g. the firmware for an iMac is located at <code>EFI/APPLE/FIRMWARE/IM171_0110_B00.fd</code>).  Alternatively, @osxreverser maintains a repository of firmware images on <a href="https://github.com/gdbinit/firmware_vault">Github</a>. Like other vendors, Apple tends to use two file extensions for UEFI firmware: <code>.fd</code> (Flash Descriptor) which contains a <em>Firmware Volume (FVM)</em>, and <code>.scap</code> (Signed Capsule) which contains a <em>Firmware Capsule</em>. The Firmware Volume contains a complete image while the Firmware Capsule contains incremental updates. We are primarily interested in the Firmware Volume at this time.</p>
+<p>In order to extract the FVM there are two open source options:</p>
+<ul>
+<li><a href="https://github.com/LongSoft/UEFITool">UEFITool</a> by LongSoft, and</li>
+<li><a href="https://github.com/theopolis/uefi-firmware-parser">uefi-firmware-parser</a> by theopolis.</li>
+</ul>
+<p>The major difference between the two tools is that UEFITool is a <del>Windows application with a</del> GUI application for exploring the firmware image (see <strong>Update 1</strong> below) where as uefi-firmware-parser is written in Python and exposes both a programming interface in addition to a command line. After trying both I ended up using the latter since it allowed me to extract individual files from the FVM easier. The listing below shows an excerpt of the output when you run uefi-firmware-parser.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ironman@ubuntu:Work$ uefi-firmware-parser binaries/MBP133_0233_B00.fd
+Flash Descriptor (Intel PCH) chips 0x00, regions 0x00, masters 0x02, PCH straps 0x58, PROC straps 0x03, ICC entries 0x00
+  Flash Region <span style="color:#369">type</span>= bios, <span style="color:#369">size</span>= 0x6c9000 (<span style="color:#00d;font-weight:bold">7114752</span> bytes) details[ read: 0xaf, write: 0x01, base: 0x137, limit: 0x7ff, id: 0xff00 ]
+    Firmware Volume: fff12b8d-7696-4c8b-a985-2747075b4f50 attr 0xffff8eff, rev 1, cksum 0x6a22, size 0x30000 (<span style="color:#00d;font-weight:bold">196608</span> bytes)
+      Firmware Volume Blocks: (2, 0x10000)(16, 0x1000)
+      Raw section: NVRAM
+      Raw section: NVRAM
+    Firmware Volume: 8c8ce578-8a3d-4f1c-9935-896185c32dd3 attr 0x00047eff, rev 2, cksum 0xf503, size 0x157000 (<span style="color:#00d;font-weight:bold">1404928</span> bytes)
+      Firmware Volume Blocks: (343, 0x1000)
+      File 0: ffffffff-ffff-ffff-ffff-ffffffffffff <span style="color:#038">type</span> 0xf0, attr 0x00, state 0x07, size 0x2c (<span style="color:#00d;font-weight:bold">44</span> bytes), (ffs padding)
+      File 1: 5e7be016-33cf-2d42-8758-c69fa5cdbb2f <span style="color:#038">type</span> 0x02, attr 0x00, state 0x07, size 0x5b78 (<span style="color:#00d;font-weight:bold">23416</span> bytes), (freeform)
+        Section 0: <span style="color:#038">type</span> 0x19, size 0x5b60 (<span style="color:#00d;font-weight:bold">23392</span> bytes) (Raw section)
+
+...</code></pre></div>
+<p>As shown, the FVM is a hierarchical structure which may contain additional Firmware Volumes, <em>Firmware File Systems (FFS)</em>, and files. Also note that objects in the FVM are identified using GUIDs, this approach is quite pervasive in UEFI. Although not shown in the listing above, some files do contain names in their metadata which uefi-firmware-parser will display, some of the Apple-specific names found are:</p>
+<ul>
+<li><code>AppleDebugSupportDxe</code></li>
+<li><code>AppleUpdateMTRR</code></li>
+<li><code>AppleBds</code></li>
+<li><code>AppleSmc</code></li>
+<li><code>ApplePlatformInitDxe</code></li>
+<li><code>AppleBootUI</code></li>
+</ul>
+<p>Of note are <code>AppleDebugSupportDxe</code> and <code>ApplePlatformInitDxe</code> which, based on the name, would be executed in UEFI&rsquo;s <em>Driver eXecution Environment (DXE)</em> as well as <code>AppleBds</code> which, again based on name, would be loaded during <em>Boot Device Selection (BDS)</em>. The Tianocore wiki has a an article describing the various <a href="https://github.com/tianocore/tianocore.github.io/wiki/PI-Boot-Flow">stages of platform initialization</a> in UEFI.</p>
+<p>In order to identify &ldquo;interesting&rdquo; binaries in the extracted FVM your two primary options are to use the names just discussed as a guide or search for strings in the binaries. When it comes to string searches it is important to keep in mind that strings are  UTF-16 encoded by default and you will need to account for that. Unfortunately, the ubiquitous <code>strings</code> command does not display UTF-16 encoded strings by default and, even more unfortunately, the switch to turn this functionality on varies across implementations. On Ubuntu you can specify the <code>-e l</code> flag; however, on macOS you&rsquo;re left with trying to convert the UTF-16 strings into UTF-8 using <code>iconv</code> then searching those.</p>
+<h2 id="uefi-images">UEFI Images</h2>
+<p>At this point lets assume that you&rsquo;ve identified a binary of interest and its time to start looking at it closer. For this post, I will be using the file named <code>AppleSmc</code> with UUID <code>db8af09a-34e3-4a7b-8225-8c5b0c059eb8</code>.</p>
+<p>Before we go any further lets first take a detour to talk about calling conventions. As we already know, UEFI applications are based on Microsoft&rsquo;s PE file format and they may be either 32-bit or 64-bit depending on the hardware. Since Apple&rsquo;s hardware is 64-bit we will focus on that. The calling convention used by PE64 binaries is the <a href="https://docs.microsoft.com/en-us/cpp/build/calling-convention">Microsoft 64-bit calling convention</a>. In it the first four integer values are passed in the registers RCX, RDX, R8, and R9. Additional integer values are passed on the stack. This calling convention also makes use of a &ldquo;shadow stack&rdquo; where space is allocated to store function parameters (see <a href="https://docs.microsoft.com/en-us/cpp/build/stack-allocation">this page</a> on stack allocation) regardless of the number of parameters passed.</p>
+<p>UEFI applications take two parameters to their entry function. The first is the image handle and is of type <code>EFI_HANDLE</code>; the second is a pointer to the system table and is of type <code>EFI_SYSTEM_TABLE</code>. The image handle is used mostly as a means of referring to this image when registering protocols and performing other actions. The system table, arguably the more important and useful parameter, contains pointers the boot services table, the runtime services table, and various configuration tables among other things. The UEFI 2.7 specification devotes Chapter 4 entirely to defining the system table.</p>
+<p>Opening our binary in IDA we are quickly greeted with the disassembly of the image entry point. In order to get the markup shown below you need to first add three structures to your IDB:</p>
+<ul>
+<li><code>EFI_SYSTEM_TABLE</code></li>
+<li><code>EFI_BOOT_SERVICES</code></li>
+<li><code>EFI_GUID</code></li>
+</ul>
+<p>After that has been completed you can then mark various offsets as needed.</p>
+<figure>
+    <img src="/images/2018/03/UN-01.png"
+         alt="Marked up UEFI image entry in IDA"/> <figcaption>
+            <p>Marked up UEFI image entry in IDA</p>
+        </figcaption>
+</figure>
+
+<p>While this is a small screenshot it serves to demonstrate the markup that can be achieved using built-in structures and features.</p>
+<h2 id="the-protocol-interface-paradigm">The Protocol-Interface Paradigm</h2>
+<p>One of the pain points when it comes to reversing UEFI images is that <strong>everything uses GUIDs</strong>. On top of this, developers can install protocols in a global namespace. The fallout of this is that a protocol defined in one image can be used in another image which has the benefit of minimizing code duplication as well as separation of functionality; however, from the perspective of a reverse engineer it makes finding code incredibly tedious.</p>
+<p>A developer wishing to register a new interface has two options through the boot services table:</p>
+<ul>
+<li>call <code>BootServices.InstallProtocolInterface(...)</code></li>
+<li>call <code>BootServices.InstallMultipleProtocolInterfaces(...)</code></li>
+</ul>
+<p>The only difference between these two functions is that <code>InstallMultipleProtocolInterfaces(...)</code> can register multiple interfaces while <code>InstallProtocolInterface(...)</code> can only register one.</p>
+<p>When it comes to getting a pointer to an interface, the developer can call <code>BootServices.LocateProtocol(...)</code>.</p>
+<p>The UEFI specification defines some protocol GUIDs which can be found in the specification itself or in open source implementations such as Tianocore&rsquo;s EDK2. Additionally, vendors may define their own protocol GUIDs for use by their developers.  For a reverse engineer these vendor specific protocols are usually more interesting than the platform defined protocols.</p>
+<h1 id="binary-ninja-our-saviour">Binary Ninja: Our Saviour</h1>
+<p>Up until this point we have largely been focused on details about UEFI and its implementation. Now our focus shifts to solving the problem of locating protocols implemented somewhere in the Firmware Volume (FVM). When reversing, I tend to do a lot of my manual analysis work in IDA. However, IDA isn&rsquo;t all that great for automating the analysis of large numbers of binaries due to its limited API. On the other hand, Binary Ninja is great for this&ndash;it provides an API that exposes several intermediate languages as well as a selection of analysis approaches. On top of that if you have an appropriate license you can do all of this in &ldquo;headless&rdquo; mode without use of the GUI. The code discussed in this section is available <a href="https://github.com/lightbulbone/uefi">on my Github</a>.</p>
+<p>The first step in locating the implementation of a protocol is to find the GUID. If your reversing in IDA (or any other dissembler for that matter) you&rsquo;ll likely eventually come across an indirect call that you want to understand. Trace the register used in the indirect call backwards and eventually you should come to call to <code>BootServices.LocateProtocol(...)</code> which will have the protocol GUID as an argument. Note that GUIDs are not normally encoded as strings in UEFI images so keep in mind you&rsquo;re not looking for a string, you want the bytes representing the GUID. Once you have the GUID the next step is to figure out where it was registered/installed keeping in mind that this may have taken place in a completely different binary.</p>
+<h2 id="locating-protocol-install-locations">Locating Protocol Install Locations</h2>
+<p>To locate the protocol implementation we need to find the location of the call to either <code>BootServices.InstallProtocolInterface(...)</code> or <code>BootServices.InstallMultipleProtocolInterfaces(...)</code> that installed it. Since the UEFI image is given a pointer to the <code>EFI_SYSTEM_TABLE</code> we can look up the offset to the boot services table in that and then the offsets of each function in the boot services table. The offset of <code>InstallProtocolInterface(...)</code> is <code>0x80</code> and the offset to <code>InstallMultipleProtocolInterfaces(...)</code> is <code>0x148</code>. Both offsets are taken from IDAs structure definition. In Binary Ninja this now becomes an exercise in searching binaries for calls to either function and then inspecting the arguments passed to the call.</p>
+<p>My approach to finding these calls roughly breaks down to the following pseudocode.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">function find_calls(candidate):
+    found_calls &lt;- list()
+    image &lt;- open_binary(candidate)
+    foreach function in <span style="color:#369;font-style:italic">image</span>:
+        foreach instruction in <span style="color:#369;font-style:italic">function</span>:
+            <span style="color:#080;font-weight:bold">if</span> is_register_relative_call(instruction):
+                <span style="color:#080;font-weight:bold">if</span> register_offset is <span style="color:#00d;font-weight:bold">0x80</span> or register_offset is <span style="color:#00d;font-weight:bold">0x148</span>:
+                    found_calls.append(call)
+    <span style="color:#080;font-weight:bold">return</span> found_calls</code></pre></div>
+<p>In terms of concrete implementation, the algorithm is implemented using Binary Ninja&rsquo;s API and is contained the <a href="https://github.com/lightbulbone/uefi/tree/master/uefininja">uefininja</a> module. A few points of interest about this code and the Binary Ninja API:</p>
+<ul>
+<li>The Binary Ninja method <code>BinaryView.update_analysis()</code> call on its own is not enough to find all functions in a candidate binary. This is because the default analysis (I believe) is built using recursive-decent from the binaries entry point. To identify additional functions not found using recursive decent you must also call the method <code>BinaryView.add_analysis_option(&quot;linearsweep&quot;)</code>.</li>
+<li>The Binary Ninja API exposes both a low level (LLIL) and medium level (MLIL) intermediate language as well as the &ldquo;raw&rdquo; assembly instructions themselves. We need to use (at least) the LLIL as it has been processed by Binary Ninja and provides additional features needed later.</li>
+<li>The LLIL is presented as a tree structure. In our case we&rsquo;re looking for a path that matches the tree shown below.</li>
+</ul>
+<figure class="center">
+    <img src="/images/2018/03/UN-02.png"
+         alt="Tree structure of LLIL to identify a candidate call site"/> <figcaption>
+            <p>Tree structure of LLIL to identify a candidate call site</p>
+        </figcaption>
+</figure>
+
+<h2 id="matching-the-guid">Matching the GUID</h2>
+<p>At this point we have located a call site that installs at least one protocol. We now need to check all protocol GUIDs installed  for a match with our desired GUID. To do this we leverage a feature of Binary Ninja that uses (I believe, Vector 35 folks correct me if I&rsquo;m wrong!) a combination of data flow analysis and <del>symbolic execution</del> value-set analysis (see <strong>Update 2</strong> below) to get the value of a register in a given instruction. Since Binary Ninja also provides the ability to read memory in the analyzed binary through its API we can then take the value in the register and find what it points to in memory. Finally, we compare that result with our desired GUID. Putting this all together it looks like the following piece of code.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">reg = <span style="color:#d20;background-color:#fff0f0">&#39;rdx&#39;</span>                         <span style="color:#888"># actual register depends on which </span>
+                                    <span style="color:#888"># call and parameter we&#39;re looking at</span>
+mrv = instruction.get_reg_val(reg)  <span style="color:#888"># get_reg_value() may return None</span>
+val = mrv.value                     <span style="color:#888"># remember, mrv may be None should check for that</span>
+mem = BinaryView.read(val, <span style="color:#00d;font-weight:bold">16</span>)      <span style="color:#888"># read 16 bytes from address in val</span></code></pre></div>
+<p>If all went well, we should have a GUID in <code>mem</code> which can then be compared against our desired GUID.</p>
+<p>In the case of <code>BootServices.InstallProtocolInterface(...)</code> this is all somewhat easy since all values are passed in registers and there is no need to also search for a trailing <code>NULL</code> argument to locate the end of the parameters as in <code>BootServices.InstallMultipleProtocolInterfaces(...)</code>. Another point to note, the Binary Ninja API exposes several &ldquo;get register value&rdquo;-style methods, in my experience I found that only the variant on the LLIL instruction worked as expected.</p>
+<h1 id="wrap-up">Wrap Up</h1>
+<p>:Despite a few quirks, by far this was the first case I found Binary Ninja to really shine. Up until now I mostly found myself comparing it to IDA in terms of manual analysis when in fact it performs way better as an automated analysis framework. When it comes to UEFI, the learning curve is steep and the software complex. So far it is unclear to me if the tradeoff in complexity is worth the ease of not using the interrupt-driven programming model found in BIOS.</p>
+<p><strong>Update 1:</strong> A few readers pointed out I incorrectly stated that UEFITool is Windows only. UEFITool built with Qt and supports any platform that Qt itself does; my reasons for stating that it is Windows only is because I only found Windows pre-built binaries. I have since built it for macOS and can confirm the hardest part is installing Qt. Also, the author of UEFITool pointed out that UEFIExtract (part of the UEFITool suite) can dump binaries from the UEFI image.</p>
+<p><strong>Update 2:</strong> Vector 35 reached out to me with a correction. They do not use symbolic execution to compute the value of a register; to do this Binary Ninja uses an approach known as value-set analysis. There is a <a href="https://binary.ninja/2017/11/06/architecture-agnostic-function-detection-in-binaries.html">great post</a> on the Binary Ninja blog that discusses value-set analysis in the context of function detection.</p>
+
+
+</article>
+
+
+<section class="post-nav">
+    <ul>
+        
+        <li>
+            <a href="https://lightbulbone.github.io/posts/2016/10/dsmos-kext/"><i class="fa fa-chevron-circle-left"></i> Reversing a macOS Kernel Extension</a>
+        </li>
+        
+        
+    </ul>
+</section>
+    
+    
+
+
+
+
+
+</main>
+    <footer>
+        <h6> |
+            Rendered by <a href="https://gohugo.io" title="Hugo">Hugo</a> |
+            <a href="https://lightbulbone.github.ioindex.xml">Subscribe </a></h6>
+    </footer>
+</div>
+<script src="/js/scripts.js"></script>
+
+</body>
+
+</html>
+

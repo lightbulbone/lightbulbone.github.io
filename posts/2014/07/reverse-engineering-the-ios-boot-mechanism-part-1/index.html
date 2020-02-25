@@ -1,0 +1,253 @@
+<!doctype html>
+
+<html lang="en-us">
+
+<head>
+  <title>LightBulbOne</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="The HTML5 Herald" />
+<meta name="author" content="Dean Pucsek" /><meta property="og:title" content="Reverse Engineering the iOS Boot Mechanism: Part 1" />
+<meta property="og:description" content="Due to some unforeseen medical issues, my time as an elite athlete adbruptly came to an end a couple months ago and while dealing with those issues I had a lot of free time on my hands. So, naturally I finally got around to reading Mac OS X Internals: A Systems Approach by Amit Singh and Mac OS X and iOS Internals: To the Apple&rsquo;s Core by Johnathan Levin in their entirety." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://lightbulbone.github.io/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/" />
+<meta property="article:published_time" content="2014-07-14T08:30:00-07:00" />
+<meta property="article:modified_time" content="2014-07-14T08:30:00-07:00" />
+
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="Reverse Engineering the iOS Boot Mechanism: Part 1"/>
+<meta name="twitter:description" content="Due to some unforeseen medical issues, my time as an elite athlete adbruptly came to an end a couple months ago and while dealing with those issues I had a lot of free time on my hands. So, naturally I finally got around to reading Mac OS X Internals: A Systems Approach by Amit Singh and Mac OS X and iOS Internals: To the Apple&rsquo;s Core by Johnathan Levin in their entirety."/>
+
+<meta name="generator" content="Hugo 0.65.3" />
+    
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" integrity="sha256-l85OmPOjvil/SOvVt3HnSSjzF1TUMyT9eV0c2BzEGzU=" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://lightbulbone.github.io/fontawesome/css/all.min.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto+Slab|Ruda" />
+  <link rel="stylesheet" type="text/css" href="/css/styles.css" /></head>
+
+<body>
+  <div id="container">
+    <header>
+      <h1>
+                <a href="/">LightBulbOne</a>
+            </h1>
+
+      <ul id="social-media">
+             <li>
+               <a href="https://github.com/lightbulbone" title="GitHub">
+               <i class="fab fa-github fa-lg"></i>
+               </a>
+             </li>
+             <li>
+               <a href="https://twitter.com/lightbulbone" title="Twitter">
+               <i class="fab fa-twitter fa-lg"></i>
+               </a>
+             </li>
+      </ul>
+      
+      <p><em>Reverse engineering, program analysis, and signal processing</em></p>
+      
+    </header>
+
+    
+<nav>
+    <ul>
+        
+        <li>
+            <a class="active" href="/posts/">
+                <i class="fa-li fa  fa-lg"></i><span>Posts</span>
+            </a>
+        </li>
+        
+    </ul>
+</nav>
+
+
+    <main>
+
+
+
+
+<article>
+
+    <h1>Reverse Engineering the iOS Boot Mechanism: Part 1</h1>
+
+    
+      <aside>
+    <ul>
+        <li>
+            <time class="post-date" datetime="2014-07-14T08:30:00-07:00">Jul 14, 2014</time>
+        </li>
+        
+
+        
+
+        <li>6 minutes read</li>
+    </ul>
+</aside>
+
+    
+
+    
+
+
+    <p>Due to some unforeseen medical issues, my time as an elite athlete adbruptly came to an end a couple months ago and while dealing with those issues I had a lot of free time on my hands.  So, naturally I finally got around to reading <a href="http://www.amazon.com/Mac-OS-Internals-Systems-Approach/dp/0321278542">Mac OS X Internals: A Systems Approach</a> by Amit Singh and <a href="http://www.amazon.com/Mac-OS-iOS-Internals-Apples/dp/1118057651">Mac OS X and iOS Internals: To the Apple&rsquo;s Core</a> by Johnathan Levin in their entirety.  Both are excellent books and highly recommended.  Between reading those books, my general curiousity in low-level computer concepts, and an even greater curiousity in mobile computing I decided it was time to take a crack at reverse engineering the iOS boot mechnisms.</p>
+<h3 id="components-of-the-boot-mechanism">Components of the Boot Mechanism</h3>
+<figure>
+    <img src="/images/2014/07/Components.png"
+         alt="iOS Boot Components"/> <figcaption>
+            <p>iOS Boot Components</p>
+        </figcaption>
+</figure>
+
+<p>Before diving into setting up for decrypting and dissasembling the various components let&rsquo;s first take a quick look at an overview of the boot sequence.</p>
+<p>It all starts in the <em>Boot ROM</em>.  This bit of code is flashed onto the device during chip fabrication and can&rsquo;t be updated.  It contains the Apple Root CA certificate and is responsible for checking the integrity of the second stage bootloader, <em>Low-Level Bootloader (LLB)</em>.  The Boot ROM performs some initialization tasks and will either proceed to load LLB or move towards DFU mode through <em>iBSS</em> and <em>iBEC</em>.  LLB and the third stage bootloader, <em>iBoot</em>, are tasked with the job of initializing the remaining hardware components and eventually loading the kernel.  Both LLB and iBoot are stored on the filesystem meaning that they can be updated through an iOS upgrade.  We&rsquo;ll see more of the specifics in future blog posts as I work through the various components.</p>
+<h3 id="getting-the-pieces">Getting The Pieces</h3>
+<p>Before we can begin, we need to gather a few pieces and establish a consistent work environment.  To follow along you will need:</p>
+<ol>
+<li>Mac OS X &gt;= 10.8 (Mountain Lion)</li>
+<li>iOS 7.0.4 IPSW (iOS: 7.0.4, Build: 11B554a, Device: iPhone3,1)</li>
+<li>img3decrypt.rb</li>
+<li>IDA Pro</li>
+</ol>
+<p>In theory you can use any version of iOS, the reason for iOS 7.0.4 is that I have an iPhone 4 running that and eventually plan on translating some of this reversing into fun tricks on the device.  If you don&rsquo;t have a license for IDA Pro then you can accomplish everything using the <a href="http://hopperapp.com/">Hopper Disassember</a>.</p>
+<p>You can find links to all recently released iOS images along with the corresping key/IV pairs on the fabulous <a href="http://www.icj.me/">http://www.icj.me/</a>.  The image and key/IV pairs we&rsquo;re interested in can be found at <a href="http://www.icj.me/ios/keys/iPhone3,1/11B554a">http://www.icj.me/ios/keys/iPhone3,1/11B554a</a>.</p>
+<p>The next piece you&rsquo;ll want to grab is the <a href="https://github.com/pod2g/ios_stuff/blob/master/misc-hs07/img3decrypt.rb">img3decrypt.rb</a> script created by pod2g.  To use img3decrypt.rb you&rsquo;ll also need Ruby installed.</p>
+<h3 id="unpacking-the-ipsw">Unpacking the IPSW</h3>
+<p>Before we unpack the IPSW it&rsquo;s important to keep your workspace organized.  I like to use a folder structure such as the following:</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">~/Reversing/iOS/7.0.4/iPhone3,1/decrypted/
+~/Reversing/iOS/7.0.4/iPhone3,1/ipsw/
+~/Reversing/iOS/7.0.4/iPhone3,1/unpacked/</code></pre></div>
+<p>Next up, we need to unpack the iOS image (IPSW).  This is pretty easy since an <code>.ipsw</code> is actually just a ZIP-file in disguise.  Go ahead and tack a <code>.zip</code> onto the image name and then unzip it.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">[dean@zippy iPhone3,1]$ <span style="color:#038">cd</span> ipsw/
+[dean@zippy ipsw]$ mv iPhone3,1_7.0.4_11B554a_Restore.ipsw iPhone3,1_7.0.4_11B554a_Restore.ipsw.zip
+[dean@zippy ipsw]$ unzip iPhone3,1_7.0.4_11B554a_Restore.ipsw.zip -d ../unpacked/
+Archive:  iPhone3,1_7.0.4_11B554a_Restore.ipsw.zip
+  inflating: ../unpacked/058-1056-002.dmg  
+  inflating: ../unpacked/058-1086-002.dmg  
+  inflating: ../unpacked/058-1139-002.dmg  
+
+  ... snip ...
+
+   creating: ../unpacked/Firmware/usr/
+   creating: ../unpacked/Firmware/usr/local/
+   creating: ../unpacked/Firmware/usr/local/standalone/
+  inflating: ../unpacked/kernelcache.release.n90  
+  inflating: ../unpacked/Restore.plist  
+[dean@zippy ipsw]$ </code></pre></div>
+<p>At this point you should have an unpacked copy of the iOS image in your <code>unpacked</code> directory.</p>
+<h3 id="decrypting-llb">Decrypting LLB</h3>
+<p>Once we&rsquo;ve unpacked the iOS image the next thing we need to do is decrypt the LLB binary.  Like most files in the iOS image, the LLB binary is contained inside an IMG3 file with the data section encrypted using a key that the iOS device derives during the upgrade process.  Therefore, in order to get at the data we first need the key and associated initialization vector (IV) for the LLB binary.  Note that the key/IV pair is different for each file in the iOS image as well as for each device and build version combination.</p>
+<p>Now, let&rsquo;s get started.  The first thing we&rsquo;ll want to do is grab the key and IV from <a href="http://www.icj.me/ios/keys/iPhone3,1/11B554a">http://www.icj.me/ios/keys/iPhone3,1/11B554a</a>.  I&rsquo;ve also copied the key/IV pair below to simplify things.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">Key: e3b72ddcdc89edf6f29258c7a0e65cba0d808d1a965892515bfff988e3fd5906
+IV:  3eb5aa8acbe1386dc13e2673a2546128</code></pre></div>
+<p>Once we have that, open up your terminal and move to the directory where the LLB binary is.  Once you&rsquo;re there, just run img3decrypt.rb and it should report that the decryption succeeded and it created a <code>.dec</code> file.  The <code>.dec</code> contains the decrypted version of LLB.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">[dean@zippy ~]$ <span style="color:#038">cd</span> ~/Reversing/iOS/7.0.4/iPhone3,1/unpacked/Firmware/all_flash/all_flash.n90ap.production/
+[dean@zippy all_flash.n90ap.production]$ img3decrypt.rb LLB.n90ap.RELEASE.img3 <span style="color:#04d;background-color:#fff0f0">\
+</span><span style="color:#04d;background-color:#fff0f0"></span>&gt; e3b72ddcdc89edf6f29258c7a0e65cba0d808d1a965892515bfff988e3fd5906 <span style="color:#04d;background-color:#fff0f0">\
+</span><span style="color:#04d;background-color:#fff0f0"></span>&gt; 3eb5aa8acbe1386dc13e2673a2546128
+Image decrypted OK (bootload)
+Writing DATA payload to LLB.n90ap.RELEASE.img3.dec
+[dean@zippy all_flash.n90ap.production]$</code></pre></div>
+<p>I like to keep things organized, so I then moved the decrypted version into our <code>decrypted</code> folder.</p>
+<div class="highlight"><pre style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">[dean@zippy all_flash.n90ap.production]$ mv LLB.n90ap.RELEASE.img3.dec ../../../../decrypted/
+[dean@zippy all_flash.n90ap.production]$ <span style="color:#038">cd</span> ../../../../decrypted/
+[dean@zippy decrypted]$ ls -1
+LLB.n90ap.RELEASE.img3.dec
+[dean@zippy decrypted]$ </code></pre></div>
+<p>Thanks to the awesome work of the iOS jailbreak scene that&rsquo;s really all there is to decrypting files in the iOS image.</p>
+<h3 id="setting-up-in-ida">Setting Up In IDA</h3>
+<p>This will be the last part covered today.  What we want to do is set things up in IDA so that the addresses are correct and you can then explore on your own.  In my next article I&rsquo;ll go into more detail about how the binary is laid out and how I actually went about understanding the LLB image at a high-level.</p>
+<p>First thing&rsquo;s first, let&rsquo;s open up IDA and load our decrypted image.  To do that, find IDA Pro in your Applications folder then once it&rsquo;s running go to <strong>File -&gt; Open</strong>.</p>
+<figure>
+    <img src="/images/2014/07/IDA_Open.png"
+         alt="IDA open file dialog"/> <figcaption>
+            <p>IDA open file dialog</p>
+        </figcaption>
+</figure>
+
+<p>You&rsquo;ll then be prompted with the &ldquo;Load a new file&rdquo; screen.  Here you&rsquo;ll want to change your processor type from the default Intel selection to ARM.</p>
+<figure>
+    <img src="/images/2014/07/IDA_ARM.png"
+         alt="IDA New File dialog"/> <figcaption>
+            <p>IDA New File dialog</p>
+        </figcaption>
+</figure>
+
+<p>Next you&rsquo;ll be prompted to make any desired changes to the memory organization.  Just click <strong>OK</strong> for the default choices.</p>
+<figure>
+    <img src="/images/2014/07/IDA_Mem.png"
+         alt="IDA Memory Organization"/> <figcaption>
+            <p>IDA Memory Organization</p>
+        </figcaption>
+</figure>
+
+<p>At this point IDA should warn you that since you&rsquo;re loading a raw binary it has no idea how to parse the file.  Because of that, you&rsquo;ll have to instruct IDA where the entry point is.</p>
+<figure>
+    <img src="/images/2014/07/IDA_Warn.png"
+         alt="IDA Warning"/> <figcaption>
+            <p>IDA Warning</p>
+        </figcaption>
+</figure>
+
+<p>Now our file is loaded, but the addresses are wrong.  The Boot ROM on an iOS Device loads LLB beginning at the address <code>0x84000000</code> so we need to tell IDA that.  You can do this by going to <strong>Edit -&gt; Segments -&gt; Rebase Program&hellip;</strong> and entering <code>0x84000000</code> into the field.</p>
+<figure>
+    <img src="/images/2014/07/IDA_GoodBase.png"
+         alt="IDA Rebase Program"/> <figcaption>
+            <p>IDA Rebase Program</p>
+        </figcaption>
+</figure>
+
+<p>Finally, we now have LLB loaded with the correct addresses.  All we need to do now is tell IDA where the entry point is and let it do as much of its auto-analysis as possible.  In my next article I&rsquo;ll explain why this is true, but for now just place the IDA cursor on the byte at <code>0x84000000</code> and mark it as code (hit the <strong>C</strong> key).  If all goes well IDA should recognize that as a branch instruction.</p>
+<figure>
+    <img src="/images/2014/07/IDA_Code.png"
+         alt="First instruction marked as code"/> <figcaption>
+            <p>First instruction marked as code</p>
+        </figcaption>
+</figure>
+
+<p>At this point, you should be able to start exploring and begin to reverse engineer LLB.  As an experiment try to find all the strings in the binary and see if you can identify the general layout of the binary.</p>
+<p>Next time I&rsquo;ll go through the organization of the binary and how I figured it out.  Until then, happy hacking!</p>
+<ul>
+<li><a href="https://twitter.com/lightbulbone">@lightbulbone</a></li>
+</ul>
+
+
+</article>
+
+
+<section class="post-nav">
+    <ul>
+        
+        <li>
+            <a href="https://lightbulbone.github.io/posts/2013/08/snooping-on-commcenter/"><i class="fa fa-chevron-circle-left"></i> Snooping on CommCenter</a>
+        </li>
+        
+        
+        <li>
+            <a href="https://lightbulbone.github.io/posts/2014/07/ida-processor-options-oops/">IDA Processor Options - Oops. <i class="fa fa-chevron-circle-right"></i> </a>
+        </li>
+        
+    </ul>
+</section>
+    
+    
+
+
+
+
+
+</main>
+    <footer>
+        <h6> |
+            Rendered by <a href="https://gohugo.io" title="Hugo">Hugo</a> |
+            <a href="https://lightbulbone.github.ioindex.xml">Subscribe </a></h6>
+    </footer>
+</div>
+<script src="/js/scripts.js"></script>
+
+</body>
+
+</html>
+

@@ -1,0 +1,1388 @@
+
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+ <channel>
+   <title>IDA on LightBulbOne</title>
+   <link>https://lightbulbone.github.io/tags/ida/</link>
+   <description>Recent content in IDA on LightBulbOne</description>
+   <generator>Hugo -- gohugo.io</generator>
+   <language>en-us</language>
+   <lastBuildDate>Sun, 25 Mar 2018 08:00:00 -0700</lastBuildDate>
+   
+       <atom:link href="https://lightbulbone.github.io/tags/ida/index.xml" rel="self" type="application/rss+xml" />
+   
+   
+     <item>
+       <title>UEFI Ninja</title>
+       <link>https://lightbulbone.github.io/posts/2018/03/uefi-ninja/</link>
+       <pubDate>Sun, 25 Mar 2018 08:00:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2018/03/uefi-ninja/</guid>
+       <description>&lt;p&gt;As &lt;a href=&#34;https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface&#34;&gt;Wikipedia&lt;/a&gt; and its &lt;a href=&#34;http://www.uefi.org/faq&#34;&gt;own Forum&lt;/a&gt; says, UEFI (Unified Extensible Firmware Interface) is a software layer situated between the operating system and platform firmware. It was developed as a replacement for the BIOS and provides an environment where developers can create applications and drivers for use before the operating system is loaded. UEFI is defined as a &lt;a href=&#34;http://uefi.org/specifications&#34;&gt;specification&lt;/a&gt; with a corresponding reference implementation named &lt;a href=&#34;https://www.tianocore.org/&#34;&gt;Tianocore&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;In order to better understand another target I am reversing it became clear that I needed to learn more about UEFI and reverse some aspects of it. This blog post discusses some of the basics of UEFI and tools available.&lt;/p&gt;
+&lt;h1 id=&#34;a-crash-course-in-uefi&#34;&gt;A Crash Course in UEFI&lt;/h1&gt;
+&lt;p&gt;As mentioned previously, UEFI is intended to replace the BIOS as well as provide an environment for developers to create pre-OS  applications and drivers. The UEFI specification borrows heavily from concepts and constructs present in the Microsoft Windows environment; for example, UEFI binaries are very closely related to Microsoft&amp;rsquo;s PE-32/64 binary format. UEFI is natively capable of reading from devices, such as hard drives and flash drives, partitioned using the GPT scheme. The first partition on the device is referred to as the &lt;strong&gt;EFI System Partition (ESP)&lt;/strong&gt; and may contain almost anything. Typically the ESP is where you&amp;rsquo;ll find an OS loader but you may also find other assets such as firmware images, configuration files, and custom UEFI applications. The UEFI specification states that the ESP should be formatted as a FAT-32 partition.&lt;/p&gt;
+&lt;p&gt;From a developers perspective, UEFI manifests itself as a C API designed around tables. This is a large, and much appreciated, departure from the interrupt driven programming interface used by BIOS. Vendors (operating system, hardware, or platform) may also expose functionality in addition to that provided by UEFI through a protocol-interface paradigm. Through this paradigm, vendors are able to use the same set of custom interfaces from all of their applications since the protocols are defined in a global namespace. Another point of note is that UEFI may expose services during boot, at runtime, or both.&lt;/p&gt;
+&lt;p&gt;My target for this work is a MacBook Pro with TouchBar. I plan to cover that work in a future blog post but for now suffice it to say that I was interested in better understanding what happens before macOS is executed hence the need to investigate UEFI.&lt;/p&gt;
+&lt;h2 id=&#34;working-with-uefi-firmware&#34;&gt;Working With UEFI Firmware&lt;/h2&gt;
+&lt;p&gt;The first step to working with UEFI firmware is to get the firmware (obvious, I know). Apple has been nice to us by leaving a copy on the ESP under the path &lt;code&gt;EFI/APPLE/FIRMWARE&lt;/code&gt; (e.g. the firmware for an iMac is located at &lt;code&gt;EFI/APPLE/FIRMWARE/IM171_0110_B00.fd&lt;/code&gt;).  Alternatively, @osxreverser maintains a repository of firmware images on &lt;a href=&#34;https://github.com/gdbinit/firmware_vault&#34;&gt;Github&lt;/a&gt;. Like other vendors, Apple tends to use two file extensions for UEFI firmware: &lt;code&gt;.fd&lt;/code&gt; (Flash Descriptor) which contains a &lt;em&gt;Firmware Volume (FVM)&lt;/em&gt;, and &lt;code&gt;.scap&lt;/code&gt; (Signed Capsule) which contains a &lt;em&gt;Firmware Capsule&lt;/em&gt;. The Firmware Volume contains a complete image while the Firmware Capsule contains incremental updates. We are primarily interested in the Firmware Volume at this time.&lt;/p&gt;
+&lt;p&gt;In order to extract the FVM there are two open source options:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/LongSoft/UEFITool&#34;&gt;UEFITool&lt;/a&gt; by LongSoft, and&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/theopolis/uefi-firmware-parser&#34;&gt;uefi-firmware-parser&lt;/a&gt; by theopolis.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The major difference between the two tools is that UEFITool is a &lt;del&gt;Windows application with a&lt;/del&gt; GUI application for exploring the firmware image (see &lt;strong&gt;Update 1&lt;/strong&gt; below) where as uefi-firmware-parser is written in Python and exposes both a programming interface in addition to a command line. After trying both I ended up using the latter since it allowed me to extract individual files from the FVM easier. The listing below shows an excerpt of the output when you run uefi-firmware-parser.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;ironman@ubuntu:Work$ uefi-firmware-parser binaries/MBP133_0233_B00.fd
+Flash Descriptor (Intel PCH) chips 0x00, regions 0x00, masters 0x02, PCH straps 0x58, PROC straps 0x03, ICC entries 0x00
+  Flash Region &lt;span style=&#34;color:#369&#34;&gt;type&lt;/span&gt;= bios, &lt;span style=&#34;color:#369&#34;&gt;size&lt;/span&gt;= 0x6c9000 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;7114752&lt;/span&gt; bytes) details[ read: 0xaf, write: 0x01, base: 0x137, limit: 0x7ff, id: 0xff00 ]
+    Firmware Volume: fff12b8d-7696-4c8b-a985-2747075b4f50 attr 0xffff8eff, rev 1, cksum 0x6a22, size 0x30000 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;196608&lt;/span&gt; bytes)
+      Firmware Volume Blocks: (2, 0x10000)(16, 0x1000)
+      Raw section: NVRAM
+      Raw section: NVRAM
+    Firmware Volume: 8c8ce578-8a3d-4f1c-9935-896185c32dd3 attr 0x00047eff, rev 2, cksum 0xf503, size 0x157000 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1404928&lt;/span&gt; bytes)
+      Firmware Volume Blocks: (343, 0x1000)
+      File 0: ffffffff-ffff-ffff-ffff-ffffffffffff &lt;span style=&#34;color:#038&#34;&gt;type&lt;/span&gt; 0xf0, attr 0x00, state 0x07, size 0x2c (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;44&lt;/span&gt; bytes), (ffs padding)
+      File 1: 5e7be016-33cf-2d42-8758-c69fa5cdbb2f &lt;span style=&#34;color:#038&#34;&gt;type&lt;/span&gt; 0x02, attr 0x00, state 0x07, size 0x5b78 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;23416&lt;/span&gt; bytes), (freeform)
+        Section 0: &lt;span style=&#34;color:#038&#34;&gt;type&lt;/span&gt; 0x19, size 0x5b60 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;23392&lt;/span&gt; bytes) (Raw section)
+
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;As shown, the FVM is a hierarchical structure which may contain additional Firmware Volumes, &lt;em&gt;Firmware File Systems (FFS)&lt;/em&gt;, and files. Also note that objects in the FVM are identified using GUIDs, this approach is quite pervasive in UEFI. Although not shown in the listing above, some files do contain names in their metadata which uefi-firmware-parser will display, some of the Apple-specific names found are:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;AppleDebugSupportDxe&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;AppleUpdateMTRR&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;AppleBds&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;AppleSmc&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;ApplePlatformInitDxe&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;AppleBootUI&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Of note are &lt;code&gt;AppleDebugSupportDxe&lt;/code&gt; and &lt;code&gt;ApplePlatformInitDxe&lt;/code&gt; which, based on the name, would be executed in UEFI&amp;rsquo;s &lt;em&gt;Driver eXecution Environment (DXE)&lt;/em&gt; as well as &lt;code&gt;AppleBds&lt;/code&gt; which, again based on name, would be loaded during &lt;em&gt;Boot Device Selection (BDS)&lt;/em&gt;. The Tianocore wiki has a an article describing the various &lt;a href=&#34;https://github.com/tianocore/tianocore.github.io/wiki/PI-Boot-Flow&#34;&gt;stages of platform initialization&lt;/a&gt; in UEFI.&lt;/p&gt;
+&lt;p&gt;In order to identify &amp;ldquo;interesting&amp;rdquo; binaries in the extracted FVM your two primary options are to use the names just discussed as a guide or search for strings in the binaries. When it comes to string searches it is important to keep in mind that strings are  UTF-16 encoded by default and you will need to account for that. Unfortunately, the ubiquitous &lt;code&gt;strings&lt;/code&gt; command does not display UTF-16 encoded strings by default and, even more unfortunately, the switch to turn this functionality on varies across implementations. On Ubuntu you can specify the &lt;code&gt;-e l&lt;/code&gt; flag; however, on macOS you&amp;rsquo;re left with trying to convert the UTF-16 strings into UTF-8 using &lt;code&gt;iconv&lt;/code&gt; then searching those.&lt;/p&gt;
+&lt;h2 id=&#34;uefi-images&#34;&gt;UEFI Images&lt;/h2&gt;
+&lt;p&gt;At this point lets assume that you&amp;rsquo;ve identified a binary of interest and its time to start looking at it closer. For this post, I will be using the file named &lt;code&gt;AppleSmc&lt;/code&gt; with UUID &lt;code&gt;db8af09a-34e3-4a7b-8225-8c5b0c059eb8&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;Before we go any further lets first take a detour to talk about calling conventions. As we already know, UEFI applications are based on Microsoft&amp;rsquo;s PE file format and they may be either 32-bit or 64-bit depending on the hardware. Since Apple&amp;rsquo;s hardware is 64-bit we will focus on that. The calling convention used by PE64 binaries is the &lt;a href=&#34;https://docs.microsoft.com/en-us/cpp/build/calling-convention&#34;&gt;Microsoft 64-bit calling convention&lt;/a&gt;. In it the first four integer values are passed in the registers RCX, RDX, R8, and R9. Additional integer values are passed on the stack. This calling convention also makes use of a &amp;ldquo;shadow stack&amp;rdquo; where space is allocated to store function parameters (see &lt;a href=&#34;https://docs.microsoft.com/en-us/cpp/build/stack-allocation&#34;&gt;this page&lt;/a&gt; on stack allocation) regardless of the number of parameters passed.&lt;/p&gt;
+&lt;p&gt;UEFI applications take two parameters to their entry function. The first is the image handle and is of type &lt;code&gt;EFI_HANDLE&lt;/code&gt;; the second is a pointer to the system table and is of type &lt;code&gt;EFI_SYSTEM_TABLE&lt;/code&gt;. The image handle is used mostly as a means of referring to this image when registering protocols and performing other actions. The system table, arguably the more important and useful parameter, contains pointers the boot services table, the runtime services table, and various configuration tables among other things. The UEFI 2.7 specification devotes Chapter 4 entirely to defining the system table.&lt;/p&gt;
+&lt;p&gt;Opening our binary in IDA we are quickly greeted with the disassembly of the image entry point. In order to get the markup shown below you need to first add three structures to your IDB:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;EFI_SYSTEM_TABLE&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;EFI_BOOT_SERVICES&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;EFI_GUID&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;After that has been completed you can then mark various offsets as needed.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2018/03/UN-01.png&#34;
+         alt=&#34;Marked up UEFI image entry in IDA&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Marked up UEFI image entry in IDA&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;While this is a small screenshot it serves to demonstrate the markup that can be achieved using built-in structures and features.&lt;/p&gt;
+&lt;h2 id=&#34;the-protocol-interface-paradigm&#34;&gt;The Protocol-Interface Paradigm&lt;/h2&gt;
+&lt;p&gt;One of the pain points when it comes to reversing UEFI images is that &lt;strong&gt;everything uses GUIDs&lt;/strong&gt;. On top of this, developers can install protocols in a global namespace. The fallout of this is that a protocol defined in one image can be used in another image which has the benefit of minimizing code duplication as well as separation of functionality; however, from the perspective of a reverse engineer it makes finding code incredibly tedious.&lt;/p&gt;
+&lt;p&gt;A developer wishing to register a new interface has two options through the boot services table:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;call &lt;code&gt;BootServices.InstallProtocolInterface(...)&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;call &lt;code&gt;BootServices.InstallMultipleProtocolInterfaces(...)&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The only difference between these two functions is that &lt;code&gt;InstallMultipleProtocolInterfaces(...)&lt;/code&gt; can register multiple interfaces while &lt;code&gt;InstallProtocolInterface(...)&lt;/code&gt; can only register one.&lt;/p&gt;
+&lt;p&gt;When it comes to getting a pointer to an interface, the developer can call &lt;code&gt;BootServices.LocateProtocol(...)&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;The UEFI specification defines some protocol GUIDs which can be found in the specification itself or in open source implementations such as Tianocore&amp;rsquo;s EDK2. Additionally, vendors may define their own protocol GUIDs for use by their developers.  For a reverse engineer these vendor specific protocols are usually more interesting than the platform defined protocols.&lt;/p&gt;
+&lt;h1 id=&#34;binary-ninja-our-saviour&#34;&gt;Binary Ninja: Our Saviour&lt;/h1&gt;
+&lt;p&gt;Up until this point we have largely been focused on details about UEFI and its implementation. Now our focus shifts to solving the problem of locating protocols implemented somewhere in the Firmware Volume (FVM). When reversing, I tend to do a lot of my manual analysis work in IDA. However, IDA isn&amp;rsquo;t all that great for automating the analysis of large numbers of binaries due to its limited API. On the other hand, Binary Ninja is great for this&amp;ndash;it provides an API that exposes several intermediate languages as well as a selection of analysis approaches. On top of that if you have an appropriate license you can do all of this in &amp;ldquo;headless&amp;rdquo; mode without use of the GUI. The code discussed in this section is available &lt;a href=&#34;https://github.com/lightbulbone/uefi&#34;&gt;on my Github&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The first step in locating the implementation of a protocol is to find the GUID. If your reversing in IDA (or any other dissembler for that matter) you&amp;rsquo;ll likely eventually come across an indirect call that you want to understand. Trace the register used in the indirect call backwards and eventually you should come to call to &lt;code&gt;BootServices.LocateProtocol(...)&lt;/code&gt; which will have the protocol GUID as an argument. Note that GUIDs are not normally encoded as strings in UEFI images so keep in mind you&amp;rsquo;re not looking for a string, you want the bytes representing the GUID. Once you have the GUID the next step is to figure out where it was registered/installed keeping in mind that this may have taken place in a completely different binary.&lt;/p&gt;
+&lt;h2 id=&#34;locating-protocol-install-locations&#34;&gt;Locating Protocol Install Locations&lt;/h2&gt;
+&lt;p&gt;To locate the protocol implementation we need to find the location of the call to either &lt;code&gt;BootServices.InstallProtocolInterface(...)&lt;/code&gt; or &lt;code&gt;BootServices.InstallMultipleProtocolInterfaces(...)&lt;/code&gt; that installed it. Since the UEFI image is given a pointer to the &lt;code&gt;EFI_SYSTEM_TABLE&lt;/code&gt; we can look up the offset to the boot services table in that and then the offsets of each function in the boot services table. The offset of &lt;code&gt;InstallProtocolInterface(...)&lt;/code&gt; is &lt;code&gt;0x80&lt;/code&gt; and the offset to &lt;code&gt;InstallMultipleProtocolInterfaces(...)&lt;/code&gt; is &lt;code&gt;0x148&lt;/code&gt;. Both offsets are taken from IDAs structure definition. In Binary Ninja this now becomes an exercise in searching binaries for calls to either function and then inspecting the arguments passed to the call.&lt;/p&gt;
+&lt;p&gt;My approach to finding these calls roughly breaks down to the following pseudocode.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;function find_calls(candidate):
+    found_calls &amp;lt;- list()
+    image &amp;lt;- open_binary(candidate)
+    foreach function in &lt;span style=&#34;color:#369;font-style:italic&#34;&gt;image&lt;/span&gt;:
+        foreach instruction in &lt;span style=&#34;color:#369;font-style:italic&#34;&gt;function&lt;/span&gt;:
+            &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; is_register_relative_call(instruction):
+                &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; register_offset is &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0x80&lt;/span&gt; or register_offset is &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0x148&lt;/span&gt;:
+                    found_calls.append(call)
+    &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;return&lt;/span&gt; found_calls&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;In terms of concrete implementation, the algorithm is implemented using Binary Ninja&amp;rsquo;s API and is contained the &lt;a href=&#34;https://github.com/lightbulbone/uefi/tree/master/uefininja&#34;&gt;uefininja&lt;/a&gt; module. A few points of interest about this code and the Binary Ninja API:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;The Binary Ninja method &lt;code&gt;BinaryView.update_analysis()&lt;/code&gt; call on its own is not enough to find all functions in a candidate binary. This is because the default analysis (I believe) is built using recursive-decent from the binaries entry point. To identify additional functions not found using recursive decent you must also call the method &lt;code&gt;BinaryView.add_analysis_option(&amp;quot;linearsweep&amp;quot;)&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The Binary Ninja API exposes both a low level (LLIL) and medium level (MLIL) intermediate language as well as the &amp;ldquo;raw&amp;rdquo; assembly instructions themselves. We need to use (at least) the LLIL as it has been processed by Binary Ninja and provides additional features needed later.&lt;/li&gt;
+&lt;li&gt;The LLIL is presented as a tree structure. In our case we&amp;rsquo;re looking for a path that matches the tree shown below.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;figure class=&#34;center&#34;&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2018/03/UN-02.png&#34;
+         alt=&#34;Tree structure of LLIL to identify a candidate call site&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Tree structure of LLIL to identify a candidate call site&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;h2 id=&#34;matching-the-guid&#34;&gt;Matching the GUID&lt;/h2&gt;
+&lt;p&gt;At this point we have located a call site that installs at least one protocol. We now need to check all protocol GUIDs installed  for a match with our desired GUID. To do this we leverage a feature of Binary Ninja that uses (I believe, Vector 35 folks correct me if I&amp;rsquo;m wrong!) a combination of data flow analysis and &lt;del&gt;symbolic execution&lt;/del&gt; value-set analysis (see &lt;strong&gt;Update 2&lt;/strong&gt; below) to get the value of a register in a given instruction. Since Binary Ninja also provides the ability to read memory in the analyzed binary through its API we can then take the value in the register and find what it points to in memory. Finally, we compare that result with our desired GUID. Putting this all together it looks like the following piece of code.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;reg = &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;rdx&amp;#39;&lt;/span&gt;                         &lt;span style=&#34;color:#888&#34;&gt;# actual register depends on which &lt;/span&gt;
+                                    &lt;span style=&#34;color:#888&#34;&gt;# call and parameter we&amp;#39;re looking at&lt;/span&gt;
+mrv = instruction.get_reg_val(reg)  &lt;span style=&#34;color:#888&#34;&gt;# get_reg_value() may return None&lt;/span&gt;
+val = mrv.value                     &lt;span style=&#34;color:#888&#34;&gt;# remember, mrv may be None should check for that&lt;/span&gt;
+mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;16&lt;/span&gt;)      &lt;span style=&#34;color:#888&#34;&gt;# read 16 bytes from address in val&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;If all went well, we should have a GUID in &lt;code&gt;mem&lt;/code&gt; which can then be compared against our desired GUID.&lt;/p&gt;
+&lt;p&gt;In the case of &lt;code&gt;BootServices.InstallProtocolInterface(...)&lt;/code&gt; this is all somewhat easy since all values are passed in registers and there is no need to also search for a trailing &lt;code&gt;NULL&lt;/code&gt; argument to locate the end of the parameters as in &lt;code&gt;BootServices.InstallMultipleProtocolInterfaces(...)&lt;/code&gt;. Another point to note, the Binary Ninja API exposes several &amp;ldquo;get register value&amp;rdquo;-style methods, in my experience I found that only the variant on the LLIL instruction worked as expected.&lt;/p&gt;
+&lt;h1 id=&#34;wrap-up&#34;&gt;Wrap Up&lt;/h1&gt;
+&lt;p&gt;:Despite a few quirks, by far this was the first case I found Binary Ninja to really shine. Up until now I mostly found myself comparing it to IDA in terms of manual analysis when in fact it performs way better as an automated analysis framework. When it comes to UEFI, the learning curve is steep and the software complex. So far it is unclear to me if the tradeoff in complexity is worth the ease of not using the interrupt-driven programming model found in BIOS.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Update 1:&lt;/strong&gt; A few readers pointed out I incorrectly stated that UEFITool is Windows only. UEFITool built with Qt and supports any platform that Qt itself does; my reasons for stating that it is Windows only is because I only found Windows pre-built binaries. I have since built it for macOS and can confirm the hardest part is installing Qt. Also, the author of UEFITool pointed out that UEFIExtract (part of the UEFITool suite) can dump binaries from the UEFI image.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Update 2:&lt;/strong&gt; Vector 35 reached out to me with a correction. They do not use symbolic execution to compute the value of a register; to do this Binary Ninja uses an approach known as value-set analysis. There is a &lt;a href=&#34;https://binary.ninja/2017/11/06/architecture-agnostic-function-detection-in-binaries.html&#34;&gt;great post&lt;/a&gt; on the Binary Ninja blog that discusses value-set analysis in the context of function detection.&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Reversing a macOS Kernel Extension</title>
+       <link>https://lightbulbone.github.io/posts/2016/10/dsmos-kext/</link>
+       <pubDate>Tue, 11 Oct 2016 18:25:50 -0800</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2016/10/dsmos-kext/</guid>
+       <description>&lt;p&gt;In my &lt;a href=&#34;http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html&#34;&gt;last post&lt;/a&gt; I covered the basics of kernel debugging in macOS.  In this post we will put some of that to use and work through the process of reversing a macOS kernel module.&lt;/p&gt;
+&lt;p&gt;As I said in my last post, in macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  My goal for this post is to simply work through the kernel module with the intent of discovering its functionality and use it as an opportunity to learn a bit about kernel debugging.&lt;/p&gt;
+&lt;p&gt;If you&amp;rsquo;d like to follow along I pulled the DSMOS module off of a laptop running macOS Sierra Beta (16A286a).  Based on cursory looks at a couple copies from different versions of macOS it hasn&amp;rsquo;t changed much recently so you should be able to follow along with a copy from Mac OS X 10.11 or macOS Sierra.  As you&amp;rsquo;ll see in the screenshots, I used IDA Pro for this reversing however using a program like Hopper would be fine as well.&lt;/p&gt;
+&lt;h2 id=&#34;first-look&#34;&gt;First Look&lt;/h2&gt;
+&lt;p&gt;At a glance, the DSMOS kernel module is fairly simple in terms of number of functions.  It has 25 functions of which we only really care about 6.  Most of the functions we don&amp;rsquo;t care about are constructors or destructors.  Admittedly I haven&amp;rsquo;t taken the time to understand constructors and destructors used by a kernel module sp will be skipping them in this post.&lt;/p&gt;
+&lt;p&gt;Typically when I first look at a binary I start by looking at the strings in the binary.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-01.png&#34;
+         alt=&#34;Strings in DSMOS kernel module&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Strings in DSMOS kernel module&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;As seen in Figure 1, there really aren&amp;rsquo;t that many strings and they aren&amp;rsquo;t all that exciting.  The most interesting is probably the string &amp;ldquo;AppleSMC&amp;rdquo; which is an indicator that this module interacts with the System Management Controller.&lt;/p&gt;
+&lt;p&gt;Given that there are so few functions in this binary my approach was to simply go through each of them, have a quick look at the control flow graph (CFG) for a rough estimate of complexity, and put the function either on the &amp;ldquo;care&amp;rdquo; or &amp;ldquo;don&amp;rsquo;t care&amp;rdquo; list.  Doing this I ended up with 9 functions of interest (see Table 1).&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Address&lt;/th&gt;
+&lt;th&gt;Name&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00000A9E&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_A9E&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00000B2A&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_B2A&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00000D30&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_D30&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00000E9E&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_E9E&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;0000125A&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_125A&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00001616&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_1616&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00001734&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_1734&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00001C48&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_1C48&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;00001C94&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;sub_1C94&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Table 1: Potentially interesting function addresses and associated names.&lt;/p&gt;
+&lt;p&gt;With these functions as starting points, the next step is to start working through them.  At this point our goal is identify what each functionality each provides.&lt;/p&gt;
+&lt;h2 id=&#34;registering-an-ioservice-notification-handler&#34;&gt;Registering an IOService Notification Handler&lt;/h2&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-02.png&#34;
+         alt=&#34;Main block of code in sub_A9E&#34; width=&#34;100%&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Main block of code in sub_A9E&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;The relevant block of code from &lt;code&gt;sub_A9E&lt;/code&gt; is shown in Figure 2.  In words, this function first retrieves a matching dictionary for the &lt;code&gt;AppleSMC&lt;/code&gt; service then installs a notification handler that is called when IOKit detects a service with the class name &lt;code&gt;AppleSMC&lt;/code&gt; has been registered.  In the call to &lt;code&gt;IOService::addNotification()&lt;/code&gt; shown in Figure 2 the first argument is the address of the hanlder to be called.  This handler is labelled as &lt;code&gt;notificationHanlder&lt;/code&gt; in Figure 2 and not listed in Table 1 (it was a false negative); its located at address &lt;code&gt;00000B1A&lt;/code&gt; with a default name in IDA of &lt;code&gt;sub_B1A&lt;/code&gt;. &lt;code&gt;sub_B1A&lt;/code&gt; isn&amp;rsquo;t all that interesting, all it does is wrap &lt;code&gt;sub_B2A&lt;/code&gt; dropping some arguments in the process.&lt;/p&gt;
+&lt;h2 id=&#34;the-notification-handler&#34;&gt;The Notification Handler&lt;/h2&gt;
+&lt;p&gt;When an IOService registers the AppleSMC class the code in &lt;code&gt;sub_B2A&lt;/code&gt; will be notified.  This function begins by calling &lt;code&gt;OSMetaClassBase::safeMetaCast()&lt;/code&gt; to cast the incoming service into an AppleSMC service.  Note that Apple&amp;rsquo;s documentation states that developers should not call OSMetaClassBase methods directly and should instead use provided macros.  In this case, the call &lt;code&gt;safeMetaCast()&lt;/code&gt; was likely generated by using the &lt;code&gt;OSDynamicCast&lt;/code&gt; macro which Apple lists as a valid macro to be used by developers.&lt;/p&gt;
+&lt;p&gt;The next block in &lt;code&gt;sub_B2A&lt;/code&gt;, shown in Figure 3, is where things actually start.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-03.png&#34;
+         alt=&#34;Querying SMC for key&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Querying SMC for key&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Since C++ is horribly annoying to reverse due to all the indirect calls, rather than figuring out what method is represented by &lt;code&gt;rax+850h&lt;/code&gt; I turned to Google.  Searching for &lt;code&gt;OSK0&lt;/code&gt; and &lt;code&gt;OSK1&lt;/code&gt; turns up an &lt;a href=&#34;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&#34;&gt;article&lt;/a&gt; posted by Amit Singh.  In it he talks briefly about an older version of the DSMOS kernel extenion and also provides code that uses the &lt;code&gt;OSK0&lt;/code&gt; and &lt;code&gt;OSK1&lt;/code&gt; strings to query the SMC for two keys.  Once these keys have been acquired the kernel extension then computes a SHA-256 hash and compares to a value stored in memory.  If this comparison fails, an error is printed (not shown).&lt;/p&gt;
+&lt;p&gt;If the hashes match then we skip to the block shown in Figure 4.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-04.png&#34;
+         alt=&#34;Installing DSMOS hook&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Installing DSMOS hook&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;The first part of this basic block takes the address of &lt;code&gt;byte_3AA4&lt;/code&gt; and our keys returned from the SMC then calls &lt;code&gt;sub_1616&lt;/code&gt;.  If you look at &lt;code&gt;sub_1616&lt;/code&gt; you&amp;rsquo;ll see it contains a couple loops and a bunch of byte manipulation I didn&amp;rsquo;t want to reverse.  Looking at where &lt;code&gt;byte_3AA4&lt;/code&gt; is used you&amp;rsquo;ll see it is used in two places: here in &lt;code&gt;sub_B2A&lt;/code&gt; and in &lt;code&gt;sub_D30&lt;/code&gt;.  Let&amp;rsquo;s wait a bit to see how it is used before figuring out how it is generated.&lt;/p&gt;
+&lt;p&gt;After the call to &lt;code&gt;sub_1616&lt;/code&gt; we have two AES decryption keys set.  The first key is the value returned from the SMC when queried with &lt;code&gt;OSK0&lt;/code&gt; and the second key is the value returned when &lt;code&gt;OSK1&lt;/code&gt; is used to query the SMC.  Finally, we see a global variable named &lt;code&gt;initialized&lt;/code&gt; set to 1 and a call to &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt; with the address of &lt;code&gt;sub_D30&lt;/code&gt; as a parameter.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;void&lt;/span&gt;
+&lt;span style=&#34;color:#06b;font-weight:bold&#34;&gt;dsmos_page_transform_hook&lt;/span&gt;(dsmos_page_transform_hook_t hook)
+{
+
+    printf(&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;DSMOS has arrived&lt;/span&gt;&lt;span style=&#34;color:#04d;background-color:#fff0f0&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;&lt;/span&gt;);
+    &lt;span style=&#34;color:#888&#34;&gt;/* set the hook now - new callers will run with it */&lt;/span&gt;
+    dsmos_hook = hook;
+}&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Listing 1: Source code for &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt; from XNU source&lt;/p&gt;
+&lt;p&gt;Searching for &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt; in the XNU source we find the code in Listing 1.  This is a pretty simple funciton that simply sets the value of &lt;code&gt;dsmos_hook&lt;/code&gt; to the provided function address.&lt;/p&gt;
+&lt;h2 id=&#34;usage-of-dsmos_hook-in-xnu&#34;&gt;Usage of &lt;code&gt;dsmos_hook&lt;/code&gt; in XNU&lt;/h2&gt;
+&lt;p&gt;At this point we will take step briefly away from IDA and kernel extension turning our attention to the XNU source.  For this work I used the source of XNU 3248.60.10 which is the version used by Mac OS X 10.11.6.  If you haven&amp;rsquo;t done so already, you can download the source from &lt;a href=&#34;http://opensource.apple.com/release/os-x-10116/&#34;&gt;http://opensource.apple.com/release/os-x-10116/&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;As we saw, &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt; simply set the value of &lt;code&gt;dsmos_hook&lt;/code&gt;.  Continuing from here we find that &lt;code&gt;dsmos_hook&lt;/code&gt; is only used in &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt; as we saw and in &lt;code&gt;dsmos_page_transform&lt;/code&gt; (Listing 2).
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;int&lt;/span&gt;
+&lt;span style=&#34;color:#06b;font-weight:bold&#34;&gt;dsmos_page_transform&lt;/span&gt;(&lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;void&lt;/span&gt;* from, &lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;void&lt;/span&gt; *to, &lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;unsigned&lt;/span&gt; &lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;long&lt;/span&gt; &lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;long&lt;/span&gt; src_offset, &lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;void&lt;/span&gt; *ops)
+{
+    &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;static&lt;/span&gt; boolean_t first_wait = TRUE;
+
+    &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; (dsmos_hook == &lt;span style=&#34;color:#038&#34;&gt;NULL&lt;/span&gt;) {
+        &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; (first_wait) {
+            first_wait = FALSE;
+            printf(&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;Waiting for DSMOS...&lt;/span&gt;&lt;span style=&#34;color:#04d;background-color:#fff0f0&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;&lt;/span&gt;);
+        }   
+        &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;return&lt;/span&gt; KERN_ABORTED;
+    }
+    &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;return&lt;/span&gt; (*dsmos_hook) (from, to, src_offset, ops);
+}&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/p&gt;
+&lt;p&gt;Listing 2: Usage of &lt;code&gt;dsmos_hook&lt;/code&gt; by XNU&lt;/p&gt;
+&lt;p&gt;After ensuring &lt;code&gt;dsmos_hook&lt;/code&gt; the code in LIsting 2 just calls the hook with the parameters passed to &lt;code&gt;dsmos_page_transform&lt;/code&gt;.  This approach allows Apple some flexibility and opens up the opportunity to have multiple hooks in the future. Once again searching the XNU source, we see that the only use of &lt;code&gt;dsmos_page_transform&lt;/code&gt; is in a function called &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt;.  I have not included the source of &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; since it is a bit longer and also not very exciting.  The most interesting part about it is that it checks to see that the segment is long enough before attempting to call &lt;code&gt;dsmos_page_transform&lt;/code&gt; on it.&lt;/p&gt;
+&lt;p&gt;Continuing along, &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; is only called by &lt;code&gt;load_segment&lt;/code&gt;.  &lt;code&gt;load_segment&lt;/code&gt; is a much larger function and is not shown in its entirety but the relevant portion is shown in Listing 3.
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; (scp-&amp;gt;flags &amp;amp; SG_PROTECTED_VERSION_1) {
+    ret = unprotect_dsmos_segment(file_start,
+                          file_end - file_start,
+                          vp,
+                          pager_offset,
+                          map,
+                          vm_start,
+                          vm_end - vm_start);
+    &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; (ret != LOAD_SUCCESS) {
+        &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;return&lt;/span&gt; ret;
+    }
+}&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/p&gt;
+&lt;p&gt;Listing 3: Call to &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; from &lt;code&gt;load_segment&lt;/code&gt;&lt;/p&gt;
+&lt;p&gt;The interesting part of the code in Listing 3 is that &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; is only called on segments with the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set.  As mentioned earlier, macOS only includes a few binaries with this flag set such as Finder, Dock, and loginwindow.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-05.png&#34;
+         alt=&#34;Main functionality of hook function&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Main functionality of hook function&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;h2 id=&#34;the-hook-implementation&#34;&gt;The Hook Implementation&lt;/h2&gt;
+&lt;p&gt;At this point we know that the DSMOS kernel extension queries the SMC for a pair of keys, initializes some AES decryption contexts and global variables, then installs a hook by calling &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt;.  We also know that the Mach-O loader in the kernel will call this hook when it finds a segment with the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set.  The next question then is: what does the hook installed by the DSMOS kernel extension actually do?&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-05.png&#34;
+         alt=&#34;Main functionality of hook function&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Main functionality of hook function&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Prior to the code shown in Figure 5 is the function prologue and setting of a stack cookie; after the code is the checking of the stack cookie and function epilogue.  The code shown starts by checking to see if the initialization flag is set.  This is the same initialization flag we saw being set in &lt;code&gt;sub_B2A&lt;/code&gt; (see Figure 4).  If this flag is not set the function exits, otherwise it enters a series of checks to identify which kernel is calling the hook.  Searching the XNU source you can find the constant &lt;code&gt;0x2e69cf40&lt;/code&gt; in the implementation of &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; as shown in Listing 4.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;                &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;struct&lt;/span&gt; pager_crypt_info crypt_info;
+                crypt_info.page_decrypt = dsmos_page_transform;
+                crypt_info.crypt_ops = &lt;span style=&#34;color:#038&#34;&gt;NULL&lt;/span&gt;;
+                crypt_info.crypt_end = &lt;span style=&#34;color:#038&#34;&gt;NULL&lt;/span&gt;;
+&lt;span style=&#34;color:#c00;font-weight:bold&#34;&gt;#pragma unused(vp, macho_offset)
+&lt;/span&gt;&lt;span style=&#34;color:#c00;font-weight:bold&#34;&gt;&lt;/span&gt;                crypt_info.crypt_ops = (&lt;span style=&#34;color:#888;font-weight:bold&#34;&gt;void&lt;/span&gt; *)&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0x2e69cf40&lt;/span&gt;;
+                vm_map_offset_t crypto_backing_offset;
+                crypto_backing_offset = -&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt;; &lt;span style=&#34;color:#888&#34;&gt;/* i.e. use map entry&amp;#39;s offset */&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Listing 4: XNU setting value of &lt;code&gt;crypt_info.crypt_ops&lt;/code&gt;&lt;/p&gt;
+&lt;p&gt;As Figure 5 shows, there are three basic cases implemented in the hook: no protection, an old kernel, and a new kernel.  The basic block responsible for each case is labelled accordingly.  I did not try to figure out which kernels mapped to which version however if you read &lt;a href=&#34;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&#34;&gt;the article by Amit Singh&lt;/a&gt; you&amp;rsquo;ll notice that he talks about the method where each half of the page is encrypted with one of the SMC keys.  In our kernel extension this corresponds to the &lt;code&gt;old_kernel&lt;/code&gt; basic block.&lt;/p&gt;
+&lt;p&gt;The method currently in use by Apple starts at the basic block labelled as &lt;code&gt;new_kernel&lt;/code&gt; in Figure 5.  In it we see an 8 byte buffer is zeroed then a call is made to a function I&amp;rsquo;ve called &lt;code&gt;unprotect&lt;/code&gt; (named &lt;code&gt;sub_1734&lt;/code&gt; by IDA originally).  Looking at the parameters to &lt;code&gt;unprotect&lt;/code&gt; we see it takes the global buffer &lt;code&gt;byte_3AA4&lt;/code&gt; we saw earlier, the source buffer containing the page to be transformed, and the destination buffer to store the transformed page in among other parameters.&lt;/p&gt;
+&lt;p&gt;This is the point in our reversing where things become very tedious since Apple has moved away from using AES to encrypt the pages to a custom method composed of many byte operations (e.g. shift left/right, logical/exclusive or).&lt;/p&gt;
+&lt;h2 id=&#34;unprotecting-a-protected-page&#34;&gt;Unprotecting a Protected Page&lt;/h2&gt;
+&lt;p&gt;To properly set expectations, due to the tedious nature of this protection mechanism and me being somewhat satisfied with what I&amp;rsquo;ve learned so far I did not go through the full exercise of reversing Apple&amp;rsquo;s &amp;ldquo;unprotect&amp;rdquo; method.  Originally I had intended to write a program that would be able to apply the transform to a given binary but that program is only partially completed and does not work.  So, with expectations set sufficiently low lets get a feel for the implementation and a couple ways of approaching it.&lt;/p&gt;
+&lt;p&gt;First lets step back briefly.  Remember we saw the global variable &lt;code&gt;byte_3AA4&lt;/code&gt; being initialized in &lt;code&gt;sub_B2A&lt;/code&gt; and that I had said the code for that was also incredibly tediuous? Well, thanks to the ability to dump memory from the kernel through the debugger we don&amp;rsquo;t need to reverse it at all.  We just need to connect to a running kernel and ask it politely.&lt;/p&gt;
+&lt;h3 id=&#34;dumping-byte_3aa4-from-a-running-kernel&#34;&gt;Dumping &lt;code&gt;byte_3AA4&lt;/code&gt; From a Running Kernel&lt;/h3&gt;
+&lt;p&gt;If you are unclear about how to use the kernel debugger then check out my &lt;a href=&#34;http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html&#34;&gt;previous post&lt;/a&gt;.  To get started, on your remote machine start the debugger by hitting the NMI keys (left command, right command, and power together) then connect to the debugger from your local machine.  The following lldb sessions shows the steps all put together.&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&#34;language-console&#34; data-lang=&#34;console&#34;&gt;(lldb) kdp-remote 192.168.42.101
+Version: Darwin Kernel Version 16.0.0: Fri Aug  5 19:25:15 PDT 2016; root:xnu-3789.1.24~6/DEVELOPMENT_X86_64; UUID=4F6F13D1-366B-3A79-AE9C-4
+4484E7FAB18; stext=0xffffff802b000000
+Kernel UUID: 4F6F13D1-366B-3A79-AE9C-44484E7FAB18
+Load Address: 0xffffff802b000000
+
+...
+
+Process 1 stopped
+* thread #2: tid = 0x00b8, 0xffffff802b39a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513, name = &amp;#39;0xffffff8
+037046ee0&amp;#39;, queue = &amp;#39;0x0&amp;#39;, stop reason = signal SIGSTOP
+    frame #0: 0xffffff802b39a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513 [opt]
+(lldb) showallkexts
+OverflowError: long too big to convert
+UUID                                 kmod_info            address              size                  id  refs TEXT exec            size     
+                         version name                          
+
+...
+
+B97F871A-44FD-3EA4-BC46-8FD682118C79 0xffffff7fadf449a0   0xffffff7fadf41000   0x5000               130     0 0xffffff7fadf41000   0x5000   
+                           7.0.0 com.apple.Dont_Steal_Mac_OS_X 
+
+...
+
+(lldb) memory read --force --binary --outfile byte_3AA4.bin 0xffffff7fadf44aa4 0xffffff7fadf44aa4+4172 
+4172 bytes written to &amp;#39;/Users/dean/Sites/lightbulbone.github.io/byte_3AA4.bin&amp;#39;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;We start out by connecting to the remote host using the &lt;code&gt;kdp-remote&lt;/code&gt; command.  Once everything has loaded we can get the address of the DSMOS kernel extension in memory using the &lt;code&gt;showallkexts&lt;/code&gt; command.  In my case the base address is &lt;code&gt;0xffffff7fadf41000&lt;/code&gt;.  We then read the memory at address &lt;code&gt;0xffffff7fadf44aa4&lt;/code&gt; which is the extension base address plus the offset of &lt;code&gt;0x3aa4&lt;/code&gt;; we read 4172 bytes since that is the size of the buffer.&lt;/p&gt;
+&lt;p&gt;If you were writing a program to unprotect binaries you could use this extracted binary blob rather than trying to reverse the initialization algorithm.&lt;/p&gt;
+&lt;h3 id=&#34;emulating-the-unprotect-algorithm&#34;&gt;Emulating the Unprotect Algorithm&lt;/h3&gt;
+&lt;p&gt;Due to the tedious nature of the algorithm used to &amp;ldquo;unprotect&amp;rdquo; a page I decided to try using the &lt;a href=&#34;http://www.unicorn-engine.org/&#34;&gt;Unicorn Engine&lt;/a&gt; to emulate it.  This effort largely failed because it meant I would have to set up memory in Unicorn the same way as it is in the kernel extension and, as I said, the motivation wasn&amp;rsquo;t quite there.  As far as I know this is possible however it to can be rather tedious; especially in cases where the algorithm isn&amp;rsquo;t as self-contained as in this case.  Using an IDA plugin such as &lt;a href=&#34;https://github.com/cseagle/sk3wldbg&#34;&gt;sk3wldbg&lt;/a&gt; may help however I was not aware of it at the time.&lt;/p&gt;
+&lt;h3 id=&#34;reversing-the-unprotect-algorithm&#34;&gt;Reversing the Unprotect Algorithm&lt;/h3&gt;
+&lt;p&gt;In the end I just sat down and started working through the algorithm in IDA.  I did begin to write a program to unprotect before my motivation to work through the tedious code fell through the floor.  For me, looking at DSMOS was an opportunity to learn what a kernel module I&amp;rsquo;ve known about for many years and become more familiar with the macOS kernel.  That being said a few things a worth pointing out.&lt;br&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-06.png&#34;
+         alt=&#34;Loop found in sub_1734&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Loop found in sub_1734&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+&lt;/p&gt;
+&lt;p&gt;In Figure 6 a portion of &lt;code&gt;sub_1734&lt;/code&gt; is shown.  In it we see the first eight bytes of the &lt;code&gt;from&lt;/code&gt; pointer (stored in &lt;code&gt;r14&lt;/code&gt;) being used to build a value to pass to &lt;code&gt;sub_125A&lt;/code&gt;.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-07.png&#34;
+         alt=&#34;Unrolled loop in sub_125A&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Unrolled loop in sub_125A&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;And, in Figure 7 we see part of &lt;code&gt;sub_125A&lt;/code&gt;.  In this part we see the first two iterations of an unrolled loop.  The point of Figures 6 and 7 is to show some common constructs that come up when reversing code.  If you&amp;rsquo;re not familiar with these constructs it may help to write some code yourself and then analyze the binary after compilation.&lt;/p&gt;
+&lt;h2 id=&#34;summary&#34;&gt;Summary&lt;/h2&gt;
+&lt;p&gt;The intent of this post was to reverse engineer the DSMOS kernel extension in macOS.  The goal was to understand what functionality the DSMOS extension provided to the kernel and to become more familiar with the XNU kernel.  We also touched on IOKit briefly as well as a possible application of the Unicorn engine.&lt;/p&gt;
+&lt;p&gt;If you have any questions or comments, please feel to reach out to me on Twitter &lt;a href=&#34;https://twitter.com/lightbulbone&#34;&gt;@lightbulbone&lt;/a&gt;.&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Introduction to macOS Kernel Debugging</title>
+       <link>https://lightbulbone.github.io/posts/2016/10/intro-to-macos-kernel-debugging/</link>
+       <pubDate>Tue, 04 Oct 2016 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2016/10/intro-to-macos-kernel-debugging/</guid>
+       <description>&lt;p&gt;In macOS there is a kernel module named &amp;ldquo;Don&amp;rsquo;t Steal Mac OS X&amp;rdquo; (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point &lt;a href=&#34;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&#34;&gt;played a role in the myth&lt;/a&gt; that Apple had included a TPM in their Mac hardware.&lt;/p&gt;
+&lt;p&gt;I started reversing this kernel module because I was getting frustrated trying to reverse parts of the iOS kernel.  It occurred to me that I was trying to run before walking so it was time to slow down a little.  With that in mind, this post provides an introduction to kernel debugging.  My next post will expand on this and go through reversing the DSMOS kernel module.&lt;/p&gt;
+&lt;h2 id=&#34;kernel-debug-kits&#34;&gt;Kernel Debug Kits&lt;/h2&gt;
+&lt;p&gt;Before we jump in, lets first cover why I switched to macOS when getting frustrated with iOS.  The reason is pretty straight forward: macOS and iOS are built from nearly-identical kernel (XNU) source.  In fact all of Apple&amp;rsquo;s operating systems are.&lt;/p&gt;
+&lt;p&gt;The big advantage to starting with macOS is that Apple provides what are known as &lt;strong&gt;Kernel Debug Kits (KDKs)&lt;/strong&gt;.  A KDK provides you with Development and Debug builds of the kernel as well as some useful lldb scripts to help with debugging.  One thing you may be wondering is what is the difference between the Debug and Development builds of the kernel? The short answer, as I understand it, is that the Development kernel is essentially the Release kernel with symbols while the Debug kernel has symbols as well as additional assertions/checks enabled.  For this foray into kernel reversing I used the Development kernel.&lt;/p&gt;
+&lt;p&gt;KDKs are provided by Apple and you can download them from &lt;a href=&#34;https://developer.apple.com/download/more/&#34;&gt;https://developer.apple.com/download/more/&lt;/a&gt;.  When selecting a KDK be sure to choose the one with a kernel version that matches your target machine.  I highly recommend reading the documentation provided with the KDK and will assume you have.&lt;/p&gt;
+&lt;h2 id=&#34;configuring-the-kernel-debugger&#34;&gt;Configuring the Kernel Debugger&lt;/h2&gt;
+&lt;p&gt;Unlike debugging an application, to debug the kernel you need to use two machines: the target and the host.  The host is where you&amp;rsquo;ll be running lldb and doing all your work.  The target is the machine that is running the Development kernel and you will be debugging.  For the sake of efficacy, my host is an iMac (Late 2015) running macOS 10.12 (build 16A323) and my target is a Macbook Air (Mid 2011) running macOS 10.12 Beta (16A286aa).&lt;/p&gt;
+&lt;p&gt;A word on the target machine: it &lt;strong&gt;does not&lt;/strong&gt; need to be physical hardware.  You can use a virtual machine.  The big difference is that on physical hardware you can easily trigger the kernel debugger using the NMI keys (more on this shortly).  There might be a way to do this in a virtual machine but I had hardware so didn&amp;rsquo;t bother to figure it out.&lt;/p&gt;
+&lt;p&gt;When you install the KDK on your target machine one of the steps is to set &lt;code&gt;boot-args&lt;/code&gt; in nvram.  Mine are set as follows:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;airy:~ dean$ nvram boot-args
+boot-args       debug=0x14e kcsuffix=development kext-dev-mode=1 kdp_match_name=en4 -v
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Lets take a moment and go through each of these flags.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;kcsuffix&lt;/code&gt; simply instructs the boot loader which kernel it should look for.  In my case I used the Development kernel so &lt;code&gt;kcsuffix&lt;/code&gt; should be set to &lt;code&gt;development&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;kext-dev-mode&lt;/code&gt; causes kernel module signing requirements to be relaxed.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;-v&lt;/code&gt; enables verbose mode during boot.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The remaining two variables, &lt;code&gt;kdp_match_name&lt;/code&gt; and &lt;code&gt;debug&lt;/code&gt;, warrant a bit more discussion than a bullet point.&lt;/p&gt;
+&lt;h4 id=&#34;kdp_name_match&#34;&gt;&lt;code&gt;kdp_name_match&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;Remote kernel debugging, which we are going to do, requires either Ethernet or FireWire.  It does &lt;em&gt;not&lt;/em&gt; work over WiFi or USB. This obviously begs the question of how one would go about remote debugging with a laptop that has no Ethernet port.  Thankfully, Apple has thought this through and the answer is the &lt;code&gt;kdp_match_name&lt;/code&gt; &lt;code&gt;boot-args&lt;/code&gt; variable coupled with a Thunderbolt-to-Ethernet adapter.  You can also use an Apple Cinema display if you have one of those.&lt;/p&gt;
+&lt;p&gt;The &lt;code&gt;kdp_match_name&lt;/code&gt; variable instructs the kernel to bind the remote debugger to the specified interface.  You can find the interface name using &lt;code&gt;ifconfig&lt;/code&gt; and checking which interface has the desired IP assigned.  You also need to use &lt;code&gt;kdp_match_name&lt;/code&gt; if your Mac has multiple Ethernet interfaces.&lt;/p&gt;
+&lt;h4 id=&#34;debug&#34;&gt;&lt;code&gt;debug&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;The role played by the &lt;code&gt;debug&lt;/code&gt; variable is to configure the kernel debugger.  It&amp;rsquo;s value is an OR of the &lt;code&gt;DB_*&lt;/code&gt; constants defined in &lt;code&gt;osfmk/kern/debug.h&lt;/code&gt; of the XNU source.  Table 1 documents many of the interesting and not-so-interesting constants.&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Flag&lt;/th&gt;
+&lt;th&gt;Value&lt;/th&gt;
+&lt;th&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_HALT&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x1&lt;/td&gt;
+&lt;td&gt;Wait for debugger on boot&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_PRT&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x2&lt;/td&gt;
+&lt;td&gt;Send &lt;code&gt;printf()&lt;/code&gt; output to the console&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_NMI&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x4&lt;/td&gt;
+&lt;td&gt;Activates the kernel debugging facility, including support for NMI&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_KPRT&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x8&lt;/td&gt;
+&lt;td&gt;Send &lt;code&gt;kprintf()&lt;/code&gt; output to remote console&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_KDB&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x10&lt;/td&gt;
+&lt;td&gt;Use KDB instead of GDB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_SLOG&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x20&lt;/td&gt;
+&lt;td&gt;Enable logging system diagnostics to the system log&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_ARP&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x40&lt;/td&gt;
+&lt;td&gt;Allows the kernel debugger nub to use ARP and thus support debugging across subnets.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_KDP_BP_DIS&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x80&lt;/td&gt;
+&lt;td&gt;Deprecated, was used for old versions of GDB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_LOG_PI_SCRN&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x100&lt;/td&gt;
+&lt;td&gt;Disable the graphical panic screen.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_KDP_GETC_ENA&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x200&lt;/td&gt;
+&lt;td&gt;Prompt to enter KDB upon panic&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_KERN_DUMP_ON_PANIC&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x400&lt;/td&gt;
+&lt;td&gt;Trigger core dump on panic&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_KERN_DUMP_ON_NMI&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x800&lt;/td&gt;
+&lt;td&gt;Trigger core dump on NMI&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_DBG_POST_CORE&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x1000&lt;/td&gt;
+&lt;td&gt;Wait in debugger after NMI core&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_PANICLOG_DUMP&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x2000&lt;/td&gt;
+&lt;td&gt;Send paniclog on panic,not core&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_REBOOT_POST_CORE&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x4000&lt;/td&gt;
+&lt;td&gt;Attempt to reboot after post-panic crashdump/paniclog dump.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_NMI_BTN_ENA&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x8000&lt;/td&gt;
+&lt;td&gt;Enable button to directly trigger NMI&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_PRT_KDEBUG&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x10000&lt;/td&gt;
+&lt;td&gt;kprintf KDEBUG traces&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;DB_DISABLE_LOCAL_CORE&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;0x20000&lt;/td&gt;
+&lt;td&gt;ignore local core dump support&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Table 1: Summary of constants to use in &lt;code&gt;debug&lt;/code&gt; boot-args variable.&lt;/p&gt;
+&lt;p&gt;Some of the common values I&amp;rsquo;ve seen are: 0x141, 0x144, and 0x14e. Note that they all have &lt;code&gt;DB_LOG_PI_SCRN&lt;/code&gt; and &lt;code&gt;DB_ARP&lt;/code&gt; set.&lt;/p&gt;
+&lt;h2 id=&#34;using-the-kernel-debugger&#34;&gt;Using the Kernel Debugger&lt;/h2&gt;
+&lt;p&gt;Using the remote kernel debugger essentially boils down to installing the target KDK on the host and then running lldb on the host.  You&amp;rsquo;ll want to install the target KDK on the host so that lldb has access to the symbolicated kernel as well as some handy lldb scripts developed by Apple.  One thing to keep in mind about the remote debugger: it is not always waiting for connections.  Put differently, you can only connect to it at boot if you set &lt;code&gt;DB_HALT&lt;/code&gt;, during a panic, or an NMI if you set &lt;code&gt;DB_NMI&lt;/code&gt;.  Being able to trigger the debugger using the NMI keys (left command, right command, and power all at once) can be very handy if you want to drop into the debugger and inspect the running kernel.&lt;/p&gt;
+&lt;p&gt;Once you&amp;rsquo;ve set your &lt;code&gt;boot-args&lt;/code&gt; on the target and restarted your machine you can start debugging.  Assuming you&amp;rsquo;ve set your &lt;code&gt;debug&lt;/code&gt; variable to 0x14e once you&amp;rsquo;re machine has restarted you can trigger the kernel using the NMI keys (left command, right command, power all at once).  When you hit the NMI keys the IP address of the target will be shown on the screen. On your host you can then connect as follows.&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;(lldb) kdp-remote &amp;lt;target-ip&amp;gt;
+Version: Darwin Kernel Version 16.0.0: Fri Aug  5 19:25:15 PDT 2016; root:xnu-3789.1.24~6/DEVELOPMENT_X86_64; UUID=4F6F13D1-366B-3A79-AE9C-44484E7FAB18; stext=0xffffff8006000000
+Kernel UUID: 4F6F13D1-366B-3A79-AE9C-44484E7FAB18
+Load Address: 0xffffff8006000000
+Loading kernel debugging from /Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/kernel.py
+LLDB version lldb-360.1.50
+settings set target.process.python-os-plugin-path &amp;quot;/Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/lldbmacros/core/operating_system.py&amp;quot;
+Target arch: x86_64
+Instantiating threads completely from saved state in memory.
+settings set target.trap-handler-names hndl_allintrs hndl_alltraps trap_from_kernel hndl_double_fault hndl_machine_check _fleh_prefabt _ExceptionVectorsBase _ExceptionVectorsTable _fleh_undef _fleh_dataabt _fleh_irq _fleh_decirq _fleh_fiq_generic _fleh_dec
+command script import &amp;quot;/Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development.dSYM/Contents/Resources/DWARF/../Python/lldbmacros/xnu.py&amp;quot;
+xnu debug macros loaded successfully. Run showlldbtypesummaries to enable type summaries.
+
+
+Kernel slid 0x5e00000 in memory.
+Loaded kernel file /Library/Developer/KDKs/KDK_10.12_16A286a.kdk/System/Library/Kernels/kernel.development
+Loading 119 kext modules warning: Can&#39;t find binary/dSYM for com.apple.kec.corecrypto (700E1192-8CD6-3F61-ABE9-D27C2CC1F164)
+
+/*-- removed for clarity --*/
+
+. done.
+Target arch: x86_64
+Instantiating threads completely from saved state in memory.
+kernel.development was compiled with optimization - stepping may behave oddly; variables may not be available.
+Process 1 stopped
+* thread #2: tid = 0x00b6, 0xffffff800639a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513, name = &#39;0xffffff8011639cf0&#39;, queue = &#39;0x0&#39;, stop reason = signal SIGSTOP
+    frame #0: 0xffffff800639a3de kernel.development`Debugger [inlined] hw_atomic_sub(delt=1) at locks.c:1513 [opt]
+(lldb)
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;At this point you can use lldb as you normally would.  You will also have a bunch of additional commands provided throught the KDK.  For example you can list all kexts like so:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;(lldb) showallkexts 
+OverflowError: long too big to convert
+UUID                                 kmod_info            address              size                  id  refs TEXT exec            size     
+                         version name                          
+0490CEBA-045D-344E-AC8B-1449598798F6 0xffffff7f88fdf528   0xffffff7f88fdb000   0x5000               147     0 0xffffff7f88fdb000   0x5000   
+                            1.70 com.apple.driver.AudioAUUC    
+92511291-6B64-35B1-A824-53034DEBDD39 0xffffff7f88fdacb8   0xffffff7f88fd6000   0x5000               146     0 0xffffff7f88fd6000   0x5000   
+                         1.9.5d0 com.apple.driver.AppleHWSensor
+EDC33E0C-CAA2-3E79-951D-1FC392284B4D 0xffffff7f88fd5508   0xffffff7f88fcd000   0x9000               145     0 0xffffff7f88fcd000   0x9000   
+                             3.0 com.apple.filesystems.autofs  
+CCC57A89-31FE-3D9F-88A3-0EC7D254477B 0xffffff7f88fcb028   0xffffff7f88fc8000   0x5000               144     1 0xffffff7f88fc8000   0x5000   
+                             1.0 com.apple.kext.triggers       
+E6E68296-809B-3884-ADEF-E85831F4B106 0xffffff7f88fc7090   0xffffff7f88fbb000   0xd000               143     0 0xffffff7f88fbb000   0xd000   
+                               1 com.apple.driver.pmtelemetry  
+                           
+/*-- removed for clarity --*/
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;To find all the commands available to lldb just type &lt;code&gt;help&lt;/code&gt; at the prompt.  The KDK adds a lot of them rather than going through them in this post your better off taking the time to pick a few interesting ones and seeing what they do.&lt;/p&gt;
+&lt;p&gt;At this point, you should be able to setup remote kernel debugging in macOS and be able to inspect a running kernel.  In the next post I will put some of this to use and look at the DSMOS kernel module.&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Analysis of the iOS Bluetooth Stack: BlueTool</title>
+       <link>https://lightbulbone.github.io/posts/2015/12/bluetool/</link>
+       <pubDate>Sun, 27 Dec 2015 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2015/12/bluetool/</guid>
+       <description>&lt;p&gt;On iOS the Bluetooth stack is split into three layers as shown in Figure 1.  At the top is the CoreBluetooth framework used by iOS app developers and at the bottom is the Bluetooth hardware itself.  In between these two layers is a collection of daemons that implement various aspects of the Bluetooth stack.  For example, most Bluetooth Low Energy (BLE) specific functionality is contained in the BTLEServer daemon.  BlueTool is one of the daemons running and is primarily responsible for acting as a bridge between the rest of the Bluetooth stack and the hardware.  It also likely acts as an internal test tool at Apple during development.&lt;/p&gt;
+&lt;p&gt;All analysis in this article was carried out on a 5th generation iPod Touch running iOS 8.4 (12H143).  My primary focus during analysis was on understanding what functionality BlueTool provides.  I was not actively looking for bugs despite finding a couple.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2015/12/iOS-Bluetooth-Overview.png&#34;
+         alt=&#34;Overview of the iOS Bluetooth stack.&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;Overview of the iOS Bluetooth stack.&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;h2 id=&#34;bluetool-io-mechanisms&#34;&gt;BlueTool I/O Mechanisms&lt;/h2&gt;
+&lt;p&gt;BlueTool is started automatically at boot by launchd and may also be started manually.  When it is started automatically by launchd, BlueTool is executed with an undocumented &lt;code&gt;-R&lt;/code&gt; flag that can be seen by either inspecting the running processes or looking at the launchd plist file for the executable.  If BlueTool is started manually it will drop the user into an interactive shell as shown in the listing below.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;Welcome to BlueTool... Rev 6.0
+
+bluetool-&amp;gt; ?
+BlueTool Help
+  ?                : Print out all commands and some help.
+  autobaud         : Run automatic baud rate on the selected device.
+  device           : Select the device to communicate over.
+  hci              : Send an HCI &lt;span style=&#34;color:#038&#34;&gt;command&lt;/span&gt; to the Bluetooth device.
+  bcm              : Broadcom specific operations.
+  msleep           : Sleep the &lt;span style=&#34;color:#038&#34;&gt;caller&lt;/span&gt; &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; the given number of milliseconds
+  spam             : Spam data to the UART
+  &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt;               : &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; &amp;lt;test&amp;gt; ? a : b
+  &lt;span style=&#34;color:#038&#34;&gt;true&lt;/span&gt;             : &lt;span style=&#34;color:#038&#34;&gt;true&lt;/span&gt;
+  &lt;span style=&#34;color:#038&#34;&gt;false&lt;/span&gt;            : &lt;span style=&#34;color:#038&#34;&gt;false&lt;/span&gt;
+  &lt;span style=&#34;color:#038&#34;&gt;echo&lt;/span&gt;             : &lt;span style=&#34;color:#038&#34;&gt;echo&lt;/span&gt;
+  power            : Power on/off the Bluetooth device.
+  reset            : Reset on/off/pulse the Bluetooth device.
+  wake             : Wake on/off/pulse the Bluetooth device.
+Give any commands &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;-h&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; more details.
+device returned &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;3&lt;/span&gt;
+bluetool-&amp;gt; device -D
+Opening com.apple.uart.bluetooth @ &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;115200&lt;/span&gt; baud.
+bluetool-&amp;gt; &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;When BlueTool is started by launchd it creates an XPC service called &lt;code&gt;com.apple.BlueTool&lt;/code&gt; and ignores all input from stdin.  Most output is logged to stdout or stderr.&lt;/p&gt;
+&lt;p&gt;In addition to the interactive shell and XPC service, data is also sent to and received from the Bluetooth hardware.  This communication is carried out over a UART connection and uses the Bluetooth Host-Controller Interface (HCI) command set.&lt;/p&gt;
+&lt;h2 id=&#34;xpc-service&#34;&gt;XPC Service&lt;/h2&gt;
+&lt;p&gt;When BlueTool is started by launchd the undocumented &lt;code&gt;-R&lt;/code&gt; flag causes two things to happen:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;BlueTool starts the &lt;code&gt;com.apple.BlueTool&lt;/code&gt; XPC service&lt;/li&gt;
+&lt;li&gt;BlueTool ignores all commands passed to it via stdin&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The XPC service handler first asserts that the message dictionary contains the &lt;code&gt;kBluetoolMessageId&lt;/code&gt; key and then selects a command-specific handler based on its value.  Possible values are 2 through 5 inclusive.  Note that the values 0 and 1 are not bound to any handler, it is unclear to me why.&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th align=&#34;center&#34;&gt;&lt;code&gt;kBluetoolMessageId&lt;/code&gt;&lt;/th&gt;
+&lt;th align=&#34;left&#34;&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td align=&#34;center&#34;&gt;0&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;Undefined.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td align=&#34;center&#34;&gt;1&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;Undefined.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td align=&#34;center&#34;&gt;2&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;Process given file path as script.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td align=&#34;center&#34;&gt;3&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;Process named script.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td align=&#34;center&#34;&gt;4&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;Process &lt;code&gt;\n&lt;/code&gt; separated list of commands.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td align=&#34;center&#34;&gt;5&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;Return version information.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Table 1: Bluetool XPC commands&lt;/p&gt;
+&lt;p&gt;The following are summaries of each command.&lt;/p&gt;
+&lt;h3 id=&#34;xpc-command-2&#34;&gt;XPC Command: 2&lt;/h3&gt;
+&lt;p&gt;Setting kBluetoolMessageId equal to two causes the program to then look for the &lt;code&gt;script&lt;/code&gt; key.  The value of this key is a string that contains a path to a script to be run by BlueTool.  The script file is simply a single command per line.&lt;/p&gt;
+&lt;p&gt;During testing I noticed that the file is opened using &lt;code&gt;fopen()&lt;/code&gt; with no checks beforehand to ensure the path is valid.  As a result it is possible to read files at other locations.  Although this is a directory traversal vulnerability there are two caveats:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;The sandbox should block reads to unauthorized files&lt;/li&gt;
+&lt;li&gt;Data read is sent to stderr&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Since my testing was on a jailbroken device it is unclear to me if the sandbox had been disabled.  I did find it possible to read &lt;code&gt;/etc/passwd&lt;/code&gt; however this should be tested on a non-jailbroken device.  Regardless, due to the BlueTool process being started by launchd we typically don&amp;rsquo;t have control or access to stderr.  As a result, this bug is likely not very interesting.&lt;/p&gt;
+&lt;h3 id=&#34;xpc-command-3&#34;&gt;XPC Command: 3&lt;/h3&gt;
+&lt;p&gt;This command allows a client of the XPC service to execute a named script.  The three script names I&amp;rsquo;ve found so far are: boot, init, and deepsleep.&lt;/p&gt;
+&lt;h3 id=&#34;xpc-command-4&#34;&gt;XPC Command: 4&lt;/h3&gt;
+&lt;p&gt;When kBluetoolMessageId is set to 4 BlueTool will then search for a dictionary key of &lt;code&gt;command&lt;/code&gt;.  The string associated with this key is then split into substrings using &lt;code&gt;strtok&lt;/code&gt; and passed to the central command processor used by both the XPC service and the interactive shell.&lt;/p&gt;
+&lt;h3 id=&#34;xpc-command-5&#34;&gt;XPC Command: 5&lt;/h3&gt;
+&lt;p&gt;The final command simply replies with the chip model, firmware version, and manufacturer as strings. This command takes no inputs.&lt;/p&gt;
+&lt;h2 id=&#34;bluetool-commands&#34;&gt;BlueTool Commands&lt;/h2&gt;
+&lt;p&gt;As was shown previously, BlueTool supports a number of commands.  Most commands accept the &lt;code&gt;-h&lt;/code&gt; flag to show additional information about the command.  Two commands that I looked at in particular are &lt;code&gt;spam&lt;/code&gt; and &lt;code&gt;bcm&lt;/code&gt;.  Before executing most commands it is expected that you connect to a device via the &lt;code&gt;device&lt;/code&gt; command.&lt;/p&gt;
+&lt;h3 id=&#34;spam-segfault&#34;&gt;Spam Segfault&lt;/h3&gt;
+&lt;p&gt;Shortly after I began experimenting with the interactive shell I noticed that executing the &lt;code&gt;spam&lt;/code&gt; command lead to a segfault.  Being hopeful that I may be able to turn this bug into something useful I decided to investigate it.&lt;/p&gt;
+&lt;p&gt;Connecting to BlueTool with LLDB and passing the &lt;code&gt;spam&lt;/code&gt; command I found that BlueTool was crashing due to trying to branch to the address &lt;code&gt;0x00000000&lt;/code&gt;.  This happened because I was not opening a device beforehand.  Opening a device is required because BlueTool tries to abstract away the hardware to some degree by placing a set of function pointers in memory when opening the device.  These function pointers provide hardware specific functionality.  Since the &lt;code&gt;spam&lt;/code&gt; command does not first ensure a device is open it will blindly try to branch to the address stored in the function pointer.  For more on the function pointers and other data stored when opening a device see the section titled &lt;em&gt;The 0x400 Structure&lt;/em&gt;.&lt;/p&gt;
+&lt;h3 id=&#34;downloading-firmware-to-the-bluetooth-module&#34;&gt;Downloading Firmware to the Bluetooth Module&lt;/h3&gt;
+&lt;p&gt;The &lt;code&gt;bcm&lt;/code&gt; command offers a subcommand that allows you to specify the path of a &lt;code&gt;.hcd&lt;/code&gt; file (Broadcom firmware) to download.  I am still in the process of dumping and reversing the firmware, however the presence of this command means it is possible to update the Bluetooth module.&lt;/p&gt;
+&lt;h2 id=&#34;the-0x400-structure&#34;&gt;The 0x400 Structure&lt;/h2&gt;
+&lt;p&gt;Through out the binary there is heavy use of what I&amp;rsquo;ve dubbed &amp;ldquo;the 0x400 structure&amp;rdquo;.  This name came to be because this structure is always referenced by adding 0x400 to a base register.  The structure contains the following.&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Offset&lt;/th&gt;
+&lt;th&gt;Value&lt;/th&gt;
+&lt;th&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;0x400&lt;/td&gt;
+&lt;td&gt;socket&lt;/td&gt;
+&lt;td&gt;UART socket file descriptor&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x404&lt;/td&gt;
+&lt;td&gt;open&lt;/td&gt;
+&lt;td&gt;boolean value indicating if device is open or closed&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x408&lt;/td&gt;
+&lt;td&gt;0x19eb1&lt;/td&gt;
+&lt;td&gt;write to socket (1 byte max)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x40c&lt;/td&gt;
+&lt;td&gt;0x19eb9&lt;/td&gt;
+&lt;td&gt;write to socket (R2 bytes max)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x410&lt;/td&gt;
+&lt;td&gt;0x19ec1&lt;/td&gt;
+&lt;td&gt;call select() on socket.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x414&lt;/td&gt;
+&lt;td&gt;0x19f41&lt;/td&gt;
+&lt;td&gt;a more different write&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x418&lt;/td&gt;
+&lt;td&gt;0x19fa1&lt;/td&gt;
+&lt;td&gt;read H4 HCI event/cmd/data body/header&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x41c&lt;/td&gt;
+&lt;td&gt;0x19e25&lt;/td&gt;
+&lt;td&gt;set baud rate&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x420&lt;/td&gt;
+&lt;td&gt;0x1a175&lt;/td&gt;
+&lt;td&gt;close UART socket&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x424&lt;/td&gt;
+&lt;td&gt;0x1a191&lt;/td&gt;
+&lt;td&gt;flush the socket, input and output&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x428&lt;/td&gt;
+&lt;td&gt;0x1a199&lt;/td&gt;
+&lt;td&gt;spam 0xAA to UART&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0x42c&lt;/td&gt;
+&lt;td&gt;0x0&lt;/td&gt;
+&lt;td&gt;set via STR at 0x19d84&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Table 2: Description of the &lt;code&gt;0x400&lt;/code&gt; structure.&lt;/p&gt;
+&lt;p&gt;The values stored in this structure were obtained by inspecting the memory of a running BlueTool process and mapped to there offset through analysis of the open-device function.&lt;/p&gt;
+&lt;h2 id=&#34;uart-and-hci&#34;&gt;UART and HCI&lt;/h2&gt;
+&lt;p&gt;Communication between BlueTool and the Bluetooth module occurs over a UART connection. The protocol used over this connection is the standard HCI protocol specified by the Bluetooth specification.  BlueTool makes use of various vendor-specific HCI commands.  Since Broadcom does not seem to release datasheets and documentation describing the various commands the following list was compiled based off strings in the binary as well as the Broadcom patchram tool at &lt;a href=&#34;https://code.google.com/p/broadcom-bluetooth/&#34;&gt;https://code.google.com/p/broadcom-bluetooth/&lt;/a&gt;.&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;OpCode&lt;/th&gt;
+&lt;th&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC01&lt;/td&gt;
+&lt;td&gt;Write Bluetooth device address&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC18&lt;/td&gt;
+&lt;td&gt;Update baud rate&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC1C&lt;/td&gt;
+&lt;td&gt;Write SCO PCM int&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC1E&lt;/td&gt;
+&lt;td&gt;Write PCM data format&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC2E&lt;/td&gt;
+&lt;td&gt;Download mini driver&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC27&lt;/td&gt;
+&lt;td&gt;Write sleep mode&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC45&lt;/td&gt;
+&lt;td&gt;Write UART clock setting 48 MHz&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC4C&lt;/td&gt;
+&lt;td&gt;Copy bytes to destination address&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC4E&lt;/td&gt;
+&lt;td&gt;Unknown&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;0xFC6D&lt;/td&gt;
+&lt;td&gt;Write i2spcm interface parameter&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Table 3: Vendor-specific HCI commands&lt;/p&gt;
+&lt;p&gt;The default UART device is opened by calling &lt;code&gt;socket()&lt;/code&gt; and &lt;code&gt;connect()&lt;/code&gt; with the device string &lt;code&gt;com.apple.uart.Bluetooth&lt;/code&gt;.  Other device nodes found are:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;/dev/btpoweroff&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/dev/btreset&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/dev/btwake&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/dev/cu.bluetooth&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/dev/tty.bluetooth&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/dev/uart.bluetooth&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;future-work&#34;&gt;Future Work&lt;/h2&gt;
+&lt;p&gt;Moving forward with my analysis of the iOS Bluetooth stack I see the following as interesting next steps:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Analysis of BTServer and BTLEServer&lt;/li&gt;
+&lt;li&gt;Reverse engineering of the Broadcom firmware blobs&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;As I have previously mentioned, my goal for this analysis is to document and understand the iOS Bluetooth stack.  Both of these next steps will help further my understanding and I hope will provide a basis for others to work off of.&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>IDA Processor Options - Oops.</title>
+       <link>https://lightbulbone.github.io/posts/2014/07/ida-processor-options-oops/</link>
+       <pubDate>Mon, 21 Jul 2014 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2014/07/ida-processor-options-oops/</guid>
+       <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;em&gt;Archive:&lt;/em&gt; This post is from an archive which unfortunately did not include images.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;So I&amp;rsquo;ve been working through the LLB code that I talked about in my last article and kept running into incorrectly decoded instructions.  I knew they were wrong because (A) the output IDA was giving made no sense and (B) I manually decoded some of them myself to check it.&lt;/p&gt;
+&lt;p&gt;The problem? I forgot to set the processor options when loading the LLB binary.&lt;/p&gt;
+&lt;p&gt;So, take my mistake as a learning experience.  When loading your binary, be sure to set your processor type.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/Load_IDA.png&#34;
+         alt=&#34;IDA Load FIle Dialog&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;IDA Load FIle Dialog&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;And then, the important part, set the processor options.  In this case the default architecture selected by the ARM processor module was not inline with the architecture used by the LLB code.  For LLB, be sure to select &lt;strong&gt;ARMv7-AR&lt;/strong&gt;.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/ARM_Options.png&#34;
+         alt=&#34;ARM Processor Options&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;ARM Processor Options&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Live and learn,&lt;/p&gt;
+&lt;p&gt;&lt;a href=&#34;https://twitter.com/lightbulbone&#34;&gt;@lightbulbone&lt;/a&gt;&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Reverse Engineering the iOS Boot Mechanism: Part 1</title>
+       <link>https://lightbulbone.github.io/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/</link>
+       <pubDate>Mon, 14 Jul 2014 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/</guid>
+       <description>&lt;p&gt;Due to some unforeseen medical issues, my time as an elite athlete adbruptly came to an end a couple months ago and while dealing with those issues I had a lot of free time on my hands.  So, naturally I finally got around to reading &lt;a href=&#34;http://www.amazon.com/Mac-OS-Internals-Systems-Approach/dp/0321278542&#34;&gt;Mac OS X Internals: A Systems Approach&lt;/a&gt; by Amit Singh and &lt;a href=&#34;http://www.amazon.com/Mac-OS-iOS-Internals-Apples/dp/1118057651&#34;&gt;Mac OS X and iOS Internals: To the Apple&amp;rsquo;s Core&lt;/a&gt; by Johnathan Levin in their entirety.  Both are excellent books and highly recommended.  Between reading those books, my general curiousity in low-level computer concepts, and an even greater curiousity in mobile computing I decided it was time to take a crack at reverse engineering the iOS boot mechnisms.&lt;/p&gt;
+&lt;h3 id=&#34;components-of-the-boot-mechanism&#34;&gt;Components of the Boot Mechanism&lt;/h3&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/Components.png&#34;
+         alt=&#34;iOS Boot Components&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;iOS Boot Components&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Before diving into setting up for decrypting and dissasembling the various components let&amp;rsquo;s first take a quick look at an overview of the boot sequence.&lt;/p&gt;
+&lt;p&gt;It all starts in the &lt;em&gt;Boot ROM&lt;/em&gt;.  This bit of code is flashed onto the device during chip fabrication and can&amp;rsquo;t be updated.  It contains the Apple Root CA certificate and is responsible for checking the integrity of the second stage bootloader, &lt;em&gt;Low-Level Bootloader (LLB)&lt;/em&gt;.  The Boot ROM performs some initialization tasks and will either proceed to load LLB or move towards DFU mode through &lt;em&gt;iBSS&lt;/em&gt; and &lt;em&gt;iBEC&lt;/em&gt;.  LLB and the third stage bootloader, &lt;em&gt;iBoot&lt;/em&gt;, are tasked with the job of initializing the remaining hardware components and eventually loading the kernel.  Both LLB and iBoot are stored on the filesystem meaning that they can be updated through an iOS upgrade.  We&amp;rsquo;ll see more of the specifics in future blog posts as I work through the various components.&lt;/p&gt;
+&lt;h3 id=&#34;getting-the-pieces&#34;&gt;Getting The Pieces&lt;/h3&gt;
+&lt;p&gt;Before we can begin, we need to gather a few pieces and establish a consistent work environment.  To follow along you will need:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Mac OS X &amp;gt;= 10.8 (Mountain Lion)&lt;/li&gt;
+&lt;li&gt;iOS 7.0.4 IPSW (iOS: 7.0.4, Build: 11B554a, Device: iPhone3,1)&lt;/li&gt;
+&lt;li&gt;img3decrypt.rb&lt;/li&gt;
+&lt;li&gt;IDA Pro&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;In theory you can use any version of iOS, the reason for iOS 7.0.4 is that I have an iPhone 4 running that and eventually plan on translating some of this reversing into fun tricks on the device.  If you don&amp;rsquo;t have a license for IDA Pro then you can accomplish everything using the &lt;a href=&#34;http://hopperapp.com/&#34;&gt;Hopper Disassember&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;You can find links to all recently released iOS images along with the corresping key/IV pairs on the fabulous &lt;a href=&#34;http://www.icj.me/&#34;&gt;http://www.icj.me/&lt;/a&gt;.  The image and key/IV pairs we&amp;rsquo;re interested in can be found at &lt;a href=&#34;http://www.icj.me/ios/keys/iPhone3,1/11B554a&#34;&gt;http://www.icj.me/ios/keys/iPhone3,1/11B554a&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The next piece you&amp;rsquo;ll want to grab is the &lt;a href=&#34;https://github.com/pod2g/ios_stuff/blob/master/misc-hs07/img3decrypt.rb&#34;&gt;img3decrypt.rb&lt;/a&gt; script created by pod2g.  To use img3decrypt.rb you&amp;rsquo;ll also need Ruby installed.&lt;/p&gt;
+&lt;h3 id=&#34;unpacking-the-ipsw&#34;&gt;Unpacking the IPSW&lt;/h3&gt;
+&lt;p&gt;Before we unpack the IPSW it&amp;rsquo;s important to keep your workspace organized.  I like to use a folder structure such as the following:&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;~/Reversing/iOS/7.0.4/iPhone3,1/decrypted/
+~/Reversing/iOS/7.0.4/iPhone3,1/ipsw/
+~/Reversing/iOS/7.0.4/iPhone3,1/unpacked/&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Next up, we need to unpack the iOS image (IPSW).  This is pretty easy since an &lt;code&gt;.ipsw&lt;/code&gt; is actually just a ZIP-file in disguise.  Go ahead and tack a &lt;code&gt;.zip&lt;/code&gt; onto the image name and then unzip it.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@zippy iPhone3,1]$ &lt;span style=&#34;color:#038&#34;&gt;cd&lt;/span&gt; ipsw/
+[dean@zippy ipsw]$ mv iPhone3,1_7.0.4_11B554a_Restore.ipsw iPhone3,1_7.0.4_11B554a_Restore.ipsw.zip
+[dean@zippy ipsw]$ unzip iPhone3,1_7.0.4_11B554a_Restore.ipsw.zip -d ../unpacked/
+Archive:  iPhone3,1_7.0.4_11B554a_Restore.ipsw.zip
+  inflating: ../unpacked/058-1056-002.dmg  
+  inflating: ../unpacked/058-1086-002.dmg  
+  inflating: ../unpacked/058-1139-002.dmg  
+
+  ... snip ...
+
+   creating: ../unpacked/Firmware/usr/
+   creating: ../unpacked/Firmware/usr/local/
+   creating: ../unpacked/Firmware/usr/local/standalone/
+  inflating: ../unpacked/kernelcache.release.n90  
+  inflating: ../unpacked/Restore.plist  
+[dean@zippy ipsw]$ &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;At this point you should have an unpacked copy of the iOS image in your &lt;code&gt;unpacked&lt;/code&gt; directory.&lt;/p&gt;
+&lt;h3 id=&#34;decrypting-llb&#34;&gt;Decrypting LLB&lt;/h3&gt;
+&lt;p&gt;Once we&amp;rsquo;ve unpacked the iOS image the next thing we need to do is decrypt the LLB binary.  Like most files in the iOS image, the LLB binary is contained inside an IMG3 file with the data section encrypted using a key that the iOS device derives during the upgrade process.  Therefore, in order to get at the data we first need the key and associated initialization vector (IV) for the LLB binary.  Note that the key/IV pair is different for each file in the iOS image as well as for each device and build version combination.&lt;/p&gt;
+&lt;p&gt;Now, let&amp;rsquo;s get started.  The first thing we&amp;rsquo;ll want to do is grab the key and IV from &lt;a href=&#34;http://www.icj.me/ios/keys/iPhone3,1/11B554a&#34;&gt;http://www.icj.me/ios/keys/iPhone3,1/11B554a&lt;/a&gt;.  I&amp;rsquo;ve also copied the key/IV pair below to simplify things.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;Key: e3b72ddcdc89edf6f29258c7a0e65cba0d808d1a965892515bfff988e3fd5906
+IV:  3eb5aa8acbe1386dc13e2673a2546128&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Once we have that, open up your terminal and move to the directory where the LLB binary is.  Once you&amp;rsquo;re there, just run img3decrypt.rb and it should report that the decryption succeeded and it created a &lt;code&gt;.dec&lt;/code&gt; file.  The &lt;code&gt;.dec&lt;/code&gt; contains the decrypted version of LLB.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@zippy ~]$ &lt;span style=&#34;color:#038&#34;&gt;cd&lt;/span&gt; ~/Reversing/iOS/7.0.4/iPhone3,1/unpacked/Firmware/all_flash/all_flash.n90ap.production/
+[dean@zippy all_flash.n90ap.production]$ img3decrypt.rb LLB.n90ap.RELEASE.img3 &lt;span style=&#34;color:#04d;background-color:#fff0f0&#34;&gt;\
+&lt;/span&gt;&lt;span style=&#34;color:#04d;background-color:#fff0f0&#34;&gt;&lt;/span&gt;&amp;gt; e3b72ddcdc89edf6f29258c7a0e65cba0d808d1a965892515bfff988e3fd5906 &lt;span style=&#34;color:#04d;background-color:#fff0f0&#34;&gt;\
+&lt;/span&gt;&lt;span style=&#34;color:#04d;background-color:#fff0f0&#34;&gt;&lt;/span&gt;&amp;gt; 3eb5aa8acbe1386dc13e2673a2546128
+Image decrypted OK (bootload)
+Writing DATA payload to LLB.n90ap.RELEASE.img3.dec
+[dean@zippy all_flash.n90ap.production]$&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;I like to keep things organized, so I then moved the decrypted version into our &lt;code&gt;decrypted&lt;/code&gt; folder.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@zippy all_flash.n90ap.production]$ mv LLB.n90ap.RELEASE.img3.dec ../../../../decrypted/
+[dean@zippy all_flash.n90ap.production]$ &lt;span style=&#34;color:#038&#34;&gt;cd&lt;/span&gt; ../../../../decrypted/
+[dean@zippy decrypted]$ ls -1
+LLB.n90ap.RELEASE.img3.dec
+[dean@zippy decrypted]$ &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Thanks to the awesome work of the iOS jailbreak scene that&amp;rsquo;s really all there is to decrypting files in the iOS image.&lt;/p&gt;
+&lt;h3 id=&#34;setting-up-in-ida&#34;&gt;Setting Up In IDA&lt;/h3&gt;
+&lt;p&gt;This will be the last part covered today.  What we want to do is set things up in IDA so that the addresses are correct and you can then explore on your own.  In my next article I&amp;rsquo;ll go into more detail about how the binary is laid out and how I actually went about understanding the LLB image at a high-level.&lt;/p&gt;
+&lt;p&gt;First thing&amp;rsquo;s first, let&amp;rsquo;s open up IDA and load our decrypted image.  To do that, find IDA Pro in your Applications folder then once it&amp;rsquo;s running go to &lt;strong&gt;File -&amp;gt; Open&lt;/strong&gt;.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Open.png&#34;
+         alt=&#34;IDA open file dialog&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;IDA open file dialog&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;You&amp;rsquo;ll then be prompted with the &amp;ldquo;Load a new file&amp;rdquo; screen.  Here you&amp;rsquo;ll want to change your processor type from the default Intel selection to ARM.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_ARM.png&#34;
+         alt=&#34;IDA New File dialog&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;IDA New File dialog&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Next you&amp;rsquo;ll be prompted to make any desired changes to the memory organization.  Just click &lt;strong&gt;OK&lt;/strong&gt; for the default choices.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Mem.png&#34;
+         alt=&#34;IDA Memory Organization&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;IDA Memory Organization&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;At this point IDA should warn you that since you&amp;rsquo;re loading a raw binary it has no idea how to parse the file.  Because of that, you&amp;rsquo;ll have to instruct IDA where the entry point is.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Warn.png&#34;
+         alt=&#34;IDA Warning&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;IDA Warning&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Now our file is loaded, but the addresses are wrong.  The Boot ROM on an iOS Device loads LLB beginning at the address &lt;code&gt;0x84000000&lt;/code&gt; so we need to tell IDA that.  You can do this by going to &lt;strong&gt;Edit -&amp;gt; Segments -&amp;gt; Rebase Program&amp;hellip;&lt;/strong&gt; and entering &lt;code&gt;0x84000000&lt;/code&gt; into the field.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_GoodBase.png&#34;
+         alt=&#34;IDA Rebase Program&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;IDA Rebase Program&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Finally, we now have LLB loaded with the correct addresses.  All we need to do now is tell IDA where the entry point is and let it do as much of its auto-analysis as possible.  In my next article I&amp;rsquo;ll explain why this is true, but for now just place the IDA cursor on the byte at &lt;code&gt;0x84000000&lt;/code&gt; and mark it as code (hit the &lt;strong&gt;C&lt;/strong&gt; key).  If all goes well IDA should recognize that as a branch instruction.&lt;/p&gt;
+&lt;figure&gt;
+    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Code.png&#34;
+         alt=&#34;First instruction marked as code&#34;/&gt; &lt;figcaption&gt;
+            &lt;p&gt;First instruction marked as code&lt;/p&gt;
+        &lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;At this point, you should be able to start exploring and begin to reverse engineer LLB.  As an experiment try to find all the strings in the binary and see if you can identify the general layout of the binary.&lt;/p&gt;
+&lt;p&gt;Next time I&amp;rsquo;ll go through the organization of the binary and how I figured it out.  Until then, happy hacking!&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://twitter.com/lightbulbone&#34;&gt;@lightbulbone&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Snooping on CommCenter</title>
+       <link>https://lightbulbone.github.io/posts/2013/08/snooping-on-commcenter/</link>
+       <pubDate>Sat, 03 Aug 2013 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2013/08/snooping-on-commcenter/</guid>
+       <description>&lt;p&gt;CommCenter is a wonderful part of iOS since it is the single point that is responsible for communication between iOS and the baseband.  And with the baseband being responsible for controlling the telephony components I wanted to see what CommCenter was telling it.&lt;/p&gt;
+&lt;p&gt;To do this all you need to do is create a dynamic library with a few functions then shove that in between CommCenter and the baseband.  Easy, eh?&lt;/p&gt;
+&lt;p&gt;Before I begin I should note that I did this using an iPhone 4 running iOS 6.1 (jailbroken) and that on newer iPhones the process is slightly different.&lt;/p&gt;
+&lt;p&gt;All code is available on &lt;a href=&#34;https://github.com/lightbulbone/ios&#34;&gt;GitHub&lt;/a&gt;.&lt;/p&gt;
+&lt;h3 id=&#34;creating-the-library&#34;&gt;Creating The Library&lt;/h3&gt;
+&lt;p&gt;To intercept the communication between CommCenter and the baseband what you need to do is replace the implementations of &lt;code&gt;open()&lt;/code&gt;, &lt;code&gt;close()&lt;/code&gt;, &lt;code&gt;read()&lt;/code&gt;, and &lt;code&gt;write()&lt;/code&gt;.  You can see how to do this in the file &lt;code&gt;ccsnoop.c&lt;/code&gt;, but really the trick is to stick a map between your implementations and the original in a special section called &lt;code&gt;_interpose&lt;/code&gt; in the &lt;code&gt;__DATA&lt;/code&gt; section.&lt;/p&gt;
+&lt;p&gt;All that’s necessary now is to compile the code into a dynamic library (see &lt;code&gt;ccsnoop.c&lt;/code&gt; for instructions).&lt;/p&gt;
+&lt;h3 id=&#34;loading-the-library&#34;&gt;Loading The Library&lt;/h3&gt;
+&lt;p&gt;In order to have the library loaded by CommCenter we first need to alter its plist to include the &lt;code&gt;DYLD_INSERT_LIBRARIES&lt;/code&gt; environment variable.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&amp;lt;key&amp;gt;EnvironmentVariables&amp;lt;/key&amp;gt;
+&amp;lt;dict&amp;gt;
+     &amp;lt;key&amp;gt;DYLD_INSERT_LIBRARIES&amp;lt;/key&amp;gt;
+     &amp;lt;string&amp;gt;/tmp/ccsnoop.dylib&amp;lt;/string&amp;gt;
+&amp;lt;/dict&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The library should be located at &lt;code&gt;/tmp/ccsnoop.dylib&lt;/code&gt;; a complete plist can be found on GitHub.&lt;/p&gt;
+&lt;p&gt;As previously mentioned, the key here is the usage of &lt;code&gt;DYLD_INSERT_LIBRARIES&lt;/code&gt; which forces any specified libraries to be loaded before any libraries specified by CommCenter.  When this is combined with the interposition used in the library we are able to override the default implementations of the desired functions.&lt;/p&gt;
+&lt;p&gt;With both the dynamic library and the modified plist we can then restart CommCenter and watch our log file for anything of interest.  To restart CommCenter you can just run the &lt;code&gt;injectCommCenter.sh&lt;/code&gt; script which essentially just uses &lt;code&gt;launchctl&lt;/code&gt; to unload and load it.&lt;/p&gt;
+&lt;h3 id=&#34;a-note-about-commcenter&#34;&gt;A Note About CommCenter&lt;/h3&gt;
+&lt;p&gt;Beginning in iOS 6 (or earlier, I’m not entirely sure) Apple has created two versions of CommCenter: CommCenterClassic, and CommCenter.  Which is used depends on the hardware you are using.  For example, an iPhone 4 will use CommCenterClassic while an iPhone 5 will use CommCenter.  At this point it’s unclear to me what the difference is between the two; however, I have heard that newer devices use a different protocol to communicate with the baseband.&lt;/p&gt;
+&lt;p&gt;Until next time, happy hacking!&lt;/p&gt;
+&lt;p&gt;@lightbulbone&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>iOS Shared Cache Extraction</title>
+       <link>https://lightbulbone.github.io/posts/2013/07/ios-shared-cache-extraction/</link>
+       <pubDate>Fri, 26 Jul 2013 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2013/07/ios-shared-cache-extraction/</guid>
+       <description>&lt;p&gt;Having fallen off the iOS-exploration train due to completing my  Masters and other commitments, I have finally climbed back aboard in pursuit of understanding the telephony stack.&lt;/p&gt;
+&lt;p&gt;Like most things in iOS that are used frequently, the vast majority of the frameworks and libraries used in the telephony stack reside in the dyld shared cache located at &lt;code&gt;/System/Library/Caches/com.apple.dyld/dyld_shared_cache_armv7&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;In this post I am going to explain how to go about extracting this cache file so that you can then work with each library individually.&lt;/p&gt;
+&lt;h3 id=&#34;get-the-cache&#34;&gt;Get The Cache&lt;/h3&gt;
+&lt;p&gt;The first step in all of this is to copy the cache over to your local machine.  I did this using a program called iExplorer, but you can just as easily do it over SSH.  As a side note, you can connect to your iDevice using SSH over USB if you install a tool called iProxy.&lt;/p&gt;
+&lt;h3 id=&#34;building-dsc_extractor&#34;&gt;Building &lt;code&gt;dsc_extractor&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The easiest way I found to extract the cache is to use a program provided by Apple called &lt;code&gt;dsc_extractor&lt;/code&gt;.  You can get the source for &lt;code&gt;dsc_extractor&lt;/code&gt; by downloading the dyld package from Apples open source page at: &lt;a href=&#34;http://opensource.apple.com/&#34;&gt;http://opensource.apple.com/&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;After downloading the package, unarchive it then go to the &lt;code&gt;launch-cache&lt;/code&gt; subdirectory.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@zippy tmp]$ tar -xvzf dyld-210.2.3.tar.gz
+[dean@zippy tmp]$ &lt;span style=&#34;color:#038&#34;&gt;cd&lt;/span&gt; dyld-210.2.3/launch-cache/&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;At this point we need to apply a patch to the &lt;code&gt;dsc_extractor&lt;/code&gt; code so that it can be compiled and function properly.  The patch to be applied is available on GitHub at &lt;a href=&#34;https://gist.github.com/lightbulbone/6092321&#34;&gt;https://gist.github.com/lightbulbone/6092321&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The patch can be applied using the &lt;code&gt;patch&lt;/code&gt; command; once patched &lt;code&gt;dsc_extractor&lt;/code&gt; can then be compiled.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@zippy launch-cache]$ patch &amp;lt; dsc_extractor.patch
+[dean@zippy launch-cache]$ clang++ -o dsc_extractor dsc_extractor.cpp dsc_iterator.cpp&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;You should now have a working copy of &lt;code&gt;dsc_extractor&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id=&#34;extracting-the-cache&#34;&gt;Extracting The Cache&lt;/h3&gt;
+&lt;p&gt;The last step is pretty simple.  All you need to do is run &lt;code&gt;dsc_extractor&lt;/code&gt;.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@zippy com.apple.dyld]$ dsc_extractor dyld_shared_cache_armv7 armv7/&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;If you then look inside the &lt;code&gt;armv7/&lt;/code&gt; folder you’ll find all the extracted libraries used on iOS.&lt;/p&gt;
+&lt;p&gt;As a quick side note, you can also open the cache file directly in IDA Pro.  I found this be a bit cumbersome although you may have better luck.&lt;/p&gt;
+&lt;p&gt;Until next time, happy hacking!&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Remote Debugging With lldb</title>
+       <link>https://lightbulbone.github.io/posts/2013/01/remote-debugging-with-lldb/</link>
+       <pubDate>Tue, 08 Jan 2013 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2013/01/remote-debugging-with-lldb/</guid>
+       <description>&lt;p&gt;The other day I was working on a project in Xcode and was getting fed up with it crashing and just not behaving.  So I set out on a mission to figure out how to remote debug an iOS app.  The secret to it all is LLDB, the LLVM Debugger.  LLDB is now the default debugger in Xcode (has been for awhile) and is a pretty powerful debugger complete with scripting in Python and many other hidden gems.&lt;/p&gt;
+&lt;p&gt;To follow along you will need:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;A jailbroken iDevice setup for development&lt;/li&gt;
+&lt;li&gt;Developer Tools (from Xcode) installed on a Mac&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;At a high-level this approach works by running a little server on the iDevice and then connecting remotely from your Mac.  To begin, SSH into your iDevice and find some program of interest (such as an iOS app you may be developing).  Then start the debug server on your iDevice.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;iPhone:/Applications/FieldTest.app root# /Developer/usr/bin/debugserver localhost:12345 ./FieldTest
+debugserver-189 &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; armv7.
+Listening to port 12345...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Now on your Mac, we launch LLDB and then connect to the remote session.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@simba ~]$ lldb
+(lldb) platform &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;select&lt;/span&gt; remote-ios
+  Platform: remote-ios
+ Connected: no
+  SDK Path: &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/Users/dean/Library/Developer/Xcode/iOS DeviceSupport/6.0.1 (10A523)&amp;#34;&lt;/span&gt;
+ SDK Roots: [ 0] &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/Users/dean/Library/Developer/Xcode/iOS DeviceSupport/5.1.1 (9B206)&amp;#34;&lt;/span&gt;
+ SDK Roots: [ 1] &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/Users/dean/Library/Developer/Xcode/iOS DeviceSupport/6.0.1 (10A523)&amp;#34;&lt;/span&gt;
+(lldb) process connect connect://192.168.1.20:12345
+Process &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2237&lt;/span&gt; stopped
+* thread &lt;span style=&#34;color:#888&#34;&gt;#1: tid = 0x1603, 0x2fe7a028 dyld`_dyld_start, stop reason = signal SIGSTOP&lt;/span&gt;
+    frame &lt;span style=&#34;color:#888&#34;&gt;#0: 0x2fe7a028 dyld`_dyld_start&lt;/span&gt;
+dyld&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;`&lt;/span&gt;_dyld_start:
+-&amp;gt; 0x2fe7a028:  mov    r8, sp
+   0x2fe7a02c:  sub    sp, sp, &lt;span style=&#34;color:#888&#34;&gt;#16&lt;/span&gt;
+   0x2fe7a030:  bic    sp, sp, &lt;span style=&#34;color:#888&#34;&gt;#7&lt;/span&gt;
+   0x2fe7a034:  ldr    r3, [pc, &lt;span style=&#34;color:#888&#34;&gt;#112]            ; _dyld_start + 132&lt;/span&gt;
+(lldb)&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;At this point you know have a remote connection to the process being debugged and can use LLDB as you would normally.  Note that this is the exact same way Xcode connects to an app being debugged so anything you can do in Xcode should be possible here.&lt;/p&gt;
+&lt;p&gt;Enjoy and happy hacking!&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Fuzzy iOS Messages!</title>
+       <link>https://lightbulbone.github.io/posts/2012/10/fuzzy-ios-messages/</link>
+       <pubDate>Fri, 19 Oct 2012 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2012/10/fuzzy-ios-messages/</guid>
+       <description>&lt;p&gt;Awhile ago I came across a post about fuzzing with a new data flow language called Pythonect.  When I read about it I thought it sounded like a pretty nifty language so I decided to try using it to fuzz the iMessage interface in the iOS Messages app.&lt;/p&gt;
+&lt;p&gt;The first part of this task is to come up with a way to send messages to an iOS device using the iMessage service.  Luckily the new Messages app on OS X 10.8 has support for AppleScript and you can send messages through it.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;color:#c00;font-weight:bold&#34;&gt;#!/usr/bin/osascript
+&lt;/span&gt;&lt;span style=&#34;color:#c00;font-weight:bold&#34;&gt;&lt;/span&gt;
+on run argv
+    &lt;span style=&#34;color:#038&#34;&gt;set&lt;/span&gt; theMessage to (item &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; of argv)
+
+    tell application &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;Messages&amp;#34;&lt;/span&gt;
+         send theMessage to buddy &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;BUDDY_NAME&amp;#34;&lt;/span&gt;
+    end tell
+end run&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;In this script we tell the Messages application to send a message that was given as an argument to the buddy &lt;code&gt;BUDDY_NAME&lt;/code&gt;.  When you use it be sure to replace &lt;code&gt;BUDDY_NAME&lt;/code&gt; with the correct buddy name you are using.  Also, I saved the script and named it &lt;code&gt;send_msg&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;From here it’s quite easy to use Pythonect to do some fuzzing.  For example, the following script will send groups of 4 and 8 A’s, B’s, C’s, and D’s.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;A&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;B&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;C&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;D&amp;#39;&lt;/span&gt;] -&amp;gt; [_ * n &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; n in [4, 8]] -&amp;gt; os.system(&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;./send_msg &amp;#34;&lt;/span&gt; + _)&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So what else can we do with Pythonect?  Well for starters you can increase the number of characters and messages sent effectively DoSing the device.  You could also mix and match characters to see what outcome that may arrive at.&lt;/p&gt;
+&lt;p&gt;I haven’t had much time to play with this but I’ve found that running the following command seems to crash the device.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;A&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;B&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;C&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;D&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;*&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;+&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;\&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;/&amp;#39;&lt;/span&gt;] -&amp;gt; [_ * n &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; n in [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000]] -&amp;gt; os.system(&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;./send_msg &amp;#34;&lt;/span&gt; + _)&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;And, this one causes the actual name of the app to be displayed.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#39;*&amp;#39;&lt;/span&gt;] -&amp;gt; os.system(&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;./send_msg &amp;#34;&lt;/span&gt; + _)&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So there is clearly something going on here, definitely stay tuned for what lurks within!&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>I Spy ChatKit!</title>
+       <link>https://lightbulbone.github.io/posts/2012/09/i-spy-chatkit/</link>
+       <pubDate>Sat, 08 Sep 2012 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2012/09/i-spy-chatkit/</guid>
+       <description>&lt;p&gt;In the last post I talked about starting to investigate MobileSMS (Messages app on iOS) and concluded with the mystery of the missing ChatKit.  I’m pleased to say that ChatKit wasn’t missing, it’s just hiding!&lt;/p&gt;
+&lt;p&gt;Admittedly I spent way to much time staring at the ChatKit.framework folder wondering where that stupid binary went.  Everything I’d read (mainly otool and IDA) told me this framework was being loaded but it wasn’t anywhere to be found on the file system.  I even went as far as writing a little script that identified every binary on the device that linked to this framework—it had to be somewhere.  Needless to say, I was pretty confused.&lt;/p&gt;
+&lt;p&gt;Well, onward and upward! If you run MobileSMS under GDB and have a peak at the loaded libraries you will indeed see that ChatKit is there with an address and everything.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:/Applications/MobileSMS.app root# gdb ./MobileSMS 
+...
+(gdb) b UIApplicationMain
+Function &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;UIApplicationMain&amp;#34;&lt;/span&gt; not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+Breakpoint &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; (UIApplicationMain) pending.
+(gdb) r
+...
+Breakpoint 1, 0x31f988a6 in UIApplicationMain ()
+(gdb) info sharedlibrary
+...
+Num Basename                Type Address         Reason | | Source     
+  | |                          | |                    | | | |          
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; dyld                       - 0x2fe00000        dyld Y Y /usr/lib/dyld at 0x2fe00000 (offset 0x0) with prefix &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;__dyld_&amp;#34;&lt;/span&gt;
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2&lt;/span&gt; MobileSMS                  - 0x1000            &lt;span style=&#34;color:#038&#34;&gt;exec&lt;/span&gt; Y Y /private/var/stash/Applications/MobileSMS.app/MobileSMS (offset 0x0)
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;3&lt;/span&gt; Foundation                 F 0x37dff000        dyld Y Y /System/Library/Frameworks/Foundation.framework/Foundation at 0x37dff000 (offset 0x48b000)
+                                               (objfile is) [memory object &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/Frameworks/Foundation.framework/Foundation&amp;#34;&lt;/span&gt; at 0x37dff000]
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;4&lt;/span&gt; UIKit                      F 0x31f67000        dyld Y Y /System/Library/Frameworks/UIKit.framework/UIKit at 0x31f67000 (offset 0x48b000)
+                                               (objfile is) [memory object &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/Frameworks/UIKit.framework/UIKit&amp;#34;&lt;/span&gt; at 0x31f67000]
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;5&lt;/span&gt; IMDPersistence             F 0x377c2000        dyld Y Y /System/Library/PrivateFrameworks/IMCore.framework/Frameworks/IMDPersistence.framework/IMDPersistence at 0x377c2000 (offset 0x48b000)
+                                               (objfile is) [memory object &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/PrivateFrameworks/IMCore.framework/Frameworks/IMDPersistence.framework/IMDPersistence&amp;#34;&lt;/span&gt; at 0x377c2000]
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;6&lt;/span&gt; AddressBook                F 0x36aa5000        dyld Y Y /System/Library/Frameworks/AddressBook.framework/AddressBook at 0x36aa5000 (offset 0x48b000)
+                                               (objfile is) [memory object &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/Frameworks/AddressBook.framework/AddressBook&amp;#34;&lt;/span&gt; at 0x36aa5000]
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;7&lt;/span&gt; AddressBookUI              F 0x365e2000        dyld Y Y /System/Library/Frameworks/AddressBookUI.framework/AddressBookUI at 0x365e2000 (offset 0x48b000)
+                                               (objfile is) [memory object &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/Frameworks/AddressBookUI.framework/AddressBookUI&amp;#34;&lt;/span&gt; at 0x365e2000]
+  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;8&lt;/span&gt; ChatKit                    F 0x32d3a000        dyld Y Y /System/Library/PrivateFrameworks/ChatKit.framework/ChatKit at 0x32d3a000 (offset 0x48b000)
+                                               (objfile is) [memory object &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit&amp;#34;&lt;/span&gt; at 0x32d3a000]
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;And if you have a peak at the address listed (0x32d3a000) you’ll even find a valid Mach-O header.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;(gdb) x /7w 0x32d3a000
+0x32d3a000:	0xfeedface	0x0000000c	0x00000009	0x00000006
+0x32d3a010:	0x00000030	0x0000160c	0x801000b5&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This thing was definitely coming from somewhere and it wasn’t the “normal” place in the file system.&lt;/p&gt;
+&lt;p&gt;After digging through the various plist files hoping to find a clue and running my script to find binaries linking against ChatKit many times I decided it was time to try and catch the loader in the act.  Once again in GDB load up MobileSMS but this time before starting the program set a breakpoint on &lt;code&gt;dlopen()&lt;/code&gt;; the function responsible for opening dynamic libraries.&lt;/p&gt;
+&lt;p&gt;Now run the program and watch the first parameter to &lt;code&gt;dlopen()&lt;/code&gt;.  A quick way to do this is to attach a command in GDB to the breakpoint.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:/Applications/MobileSMS.app root# gdb -q ./MobileSMS 
+Reading symbols &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; shared libraries . &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;done&lt;/span&gt;
+(gdb) b dlopen
+Function &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;dlopen&amp;#34;&lt;/span&gt; not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+Breakpoint &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; (dlopen) pending.
+(gdb) &lt;span style=&#34;color:#038&#34;&gt;command&lt;/span&gt; &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt;
+Type commands &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; when breakpoint &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; is hit, one per line.
+End with a line saying just &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;end&amp;#34;&lt;/span&gt;.
+&amp;gt;x /s &lt;span style=&#34;color:#369&#34;&gt;$r0&lt;/span&gt;
+&amp;gt;end&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This will cause GDB to interpret the value in register R0 (first parameter of a function) as a pointer to string and print the corresponding string.  Continue along until you see the path to ChatKit printed out.  This is great! The framework is loaded, but seriously where is this thing is coming from?  While I previously knew about the existence of the dlopen() function I’ve never really used it myself so I didn’t know much about the second parameter or how it works.&lt;/p&gt;
+&lt;p&gt;Well, it turns out the second parameter to dlopen() is used to tell it how to proceed.  Generally speaking, the second parameter of dlopen() is used to convey whether or not to use lazy binding and how symbols from the library should be exported.  It turns out that dlopen() can also double as a mechanism to check if a library has been loaded and, if so, get a handle to it (check out the man page).  You do this by specifying RTLD_NOLOAD.&lt;/p&gt;
+&lt;p&gt;So, back in our GDB session print out that second parameter (value in R1) passed to dlopen() for ChatKit.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;Breakpoint 1, 0x3162957c in dlopen ()
+0x32ca67c4:	 &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit&amp;#34;&lt;/span&gt;
+(gdb) p /x &lt;span style=&#34;color:#369&#34;&gt;$r1&lt;/span&gt;
+&lt;span style=&#34;color:#369&#34;&gt;$1&lt;/span&gt; = 0x10&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Alright, we have 0x10… great! What’s that mean?  Time to go source diving! From the man page for dlopen() we know the names given to the values we can pass in.  So it follows that some combination of those values should equate to 0x10.  And surely enough that is true.&lt;/p&gt;
+&lt;p&gt;First, head on over to &lt;a href=&#34;opensource.apple.com&#34;&gt;Apple&amp;rsquo;s Open Source page&lt;/a&gt; and grab the latest version of the dyld package.  Note that while that link is to the packages for Mac OS 10.8 the implementations used in iOS are very similar (if not the same). Once you’ve got that unpacked, do a search for one of the symbols listed in the dlopen() man page (I chose &lt;code&gt;RTLD_LAZY&lt;/code&gt;).&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@simba dyld-210.2.3]$ grep -rn RTLD_LAZY . | grep -v unit
+...
+./include/dlfcn.h:65:#define RTLD_LAZY	0x1
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So we know the symbols accepted by dlopen() are listed in dlfcn.h which isn’t that surprising since that is the file you need to include for dlopen().&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;color:#888&#34;&gt;#if !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_NOLOAD     0x10&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_NODELETE   0x80&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_FIRST      0x100   /* Mac OS X 10.5 and later */&lt;/span&gt;
+
+/*
+ * Special handle arguments &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; dlsym().
+ */
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_NEXT       ((void *) -1)   /* Search subsequent objects. */&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_DEFAULT    ((void *) -2)   /* Use default search algorithm. */&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_SELF       ((void *) -3)   /* Search this and subsequent objects (Mac OS X 10.5 and later) */&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#define RTLD_MAIN_ONLY  ((void *) -5)   /* Search main executable only (Mac OS X 10.5 and later) */&lt;/span&gt;
+&lt;span style=&#34;color:#888&#34;&gt;#endif /* not POSIX */&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This chunk of code is only available in non-POSIX environments, which MobileSMS is! So here we see that the value 0x10 equates to the symbol &lt;code&gt;RTLD_NOLOAD&lt;/code&gt;.  Which the man page says means:&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;RTLD_NOLOAD   —  The specified image is not loaded.  However, a valid handle is returned &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; the image already exists in the process. This provides a way to query &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt; an image is already loaded.  The handle returned is ref-counted, so you eventually need a corresponding call to dlclose()&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Alright, we know for a fact that MobileSMS is not actually loading ChatKit, it’s just checking to make sure it already has been loaded!&lt;/p&gt;
+&lt;p&gt;To solve this mystery of the missing ChatKit we need to consult the implementation of dlopen() which can be found in the dyld source. Rather than walking through the entire dyld codebase I’ll highlight the important parts.&lt;/p&gt;
+&lt;p&gt;When we call dlopen() using &lt;code&gt;RTLD_NOLOAD&lt;/code&gt; the loader will essentially just verify that the specified image has been loaded and, if so, return a handle to it.  To do this dyld goes through a series of phases and at each one checks to see if some permutation of the given path name exists.  Eventually it gets to the point where it will decide the specified path must be part of the dyld cache.&lt;/p&gt;
+&lt;p&gt;The dyld cache is present on iOS and contains a variety of images in it.  You can find it at /System/Library/Caches/com.apple.dyld/dyld_shared_cache_armv7 on your device.  The cache is loaded early on in the initialization of dyld.&lt;/p&gt;
+&lt;p&gt;To verify that ChatKit was in this cache I opened it up in an awesome program called Synalyze It and created a smaller grammar to parse it.  You can see this in the screenshot above.&lt;/p&gt;
+&lt;p&gt;So there we have it folks! The ChatKit wasn’t missing after all, it was just being loaded from the cache rather than through the filesystem.&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Reversing iOS Applications: Part 2</title>
+       <link>https://lightbulbone.github.io/posts/2012/08/reversing-ios-applications-part-2/</link>
+       <pubDate>Thu, 09 Aug 2012 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2012/08/reversing-ios-applications-part-2/</guid>
+       <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;em&gt;Archive:&lt;/em&gt; This post is from an archive which unfortunately did not include images.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;In the first post of this series we talked about how to get an app from the App Store into a reversable state.  Essentially we had to run the app inside a debugger and dump the contents of memory to a file which was then used to patch the original (encrypted) binary.&lt;/p&gt;
+&lt;p&gt;After writing that post I started to work through Kik in IDA when I got a text message from a friend.  It then occurred to me, why bother with Kik when I can (in theory) target Apple’s iMessage service?  So I’ve swapped out Kik and replaced it with the default Messages app found on each and every iOS device.&lt;/p&gt;
+&lt;p&gt;With the new app selected I dutifully copied it from my iPod onto my machine and promptly ran &lt;code&gt;strings&lt;/code&gt; expecting to see a bunch of jibberish returned.  To my surprise, there was human readable text!&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@simba MobileSMS]$ strings MobileSMS
+...
+message_guid
+chat_identifier
+IMDSpotlight
+Unable to find a conversation &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; Message [%@] found row ID [%d] and group ID [%@]
+No Message GUID in Spotlight URL [%@].  I have no idea what to show you.
+Asked to _showSMSConversationAndMessageForSearchURL: [%@]
+Asked to showConversationAndMessageForSearchURL: [%@]
+MailAutosaveIdentifier
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Well, that’s pretty cool! As you can see we clearly have readable strings containing various debug messages along with all the info required for Objective-C.  For the uninitiated (like myself), it turns out that the default apps shipping on iDevices are not encrypted.  I haven’t looked into why this is the case, but I suspect it has something to do with how code signing is implemented.  So we have an unencrypted app that when loaded into IDA doesn’t result in complaining what so ever.&lt;/p&gt;
+&lt;p&gt;Before digging deeper using IDA it is a good idea to see what libraries and frameworks this app uses.  As usual, this can be done using otool as follows.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;[dean@simba MobileSMS]$ otool -VL MobileSMS
+MobileSMS:
+...
+	/System/Library/PrivateFrameworks/IMCore.framework/Frameworks/IMDPersistence.framework/IMDPersistence (compatibility version 1.0.0, current version 800.0.0)
+	&lt;span style=&#34;color:#038&#34;&gt;time&lt;/span&gt; stamp &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2&lt;/span&gt; Wed Dec &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;31&lt;/span&gt; 16:00:02 &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1969&lt;/span&gt;
+	/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit (compatibility version 1.0.0, current version 1.0.0)
+	&lt;span style=&#34;color:#038&#34;&gt;time&lt;/span&gt; stamp &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2&lt;/span&gt; Wed Dec &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;31&lt;/span&gt; 16:00:02 &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1969&lt;/span&gt;
+...
+	/System/Library/PrivateFrameworks/Conference.framework/Conference (compatibility version 1.0.0, current version 1.0.0)
+	&lt;span style=&#34;color:#038&#34;&gt;time&lt;/span&gt; stamp &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2&lt;/span&gt; Wed Dec &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;31&lt;/span&gt; 16:00:02 &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1969&lt;/span&gt;
+	/System/Library/PrivateFrameworks/IMCore.framework/IMCore (compatibility version 1.0.0, current version 800.0.0)
+	&lt;span style=&#34;color:#038&#34;&gt;time&lt;/span&gt; stamp &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2&lt;/span&gt; Wed Dec &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;31&lt;/span&gt; 16:00:02 &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1969&lt;/span&gt;
+	/System/Library/PrivateFrameworks/FTClientServices.framework/FTClientServices (compatibility version 1.0.0, current version 800.0.0)
+	&lt;span style=&#34;color:#038&#34;&gt;time&lt;/span&gt; stamp &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;2&lt;/span&gt; Wed Dec &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;31&lt;/span&gt; 16:00:02 &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1969&lt;/span&gt;
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Among the usual suspects there are a few interestingly named frameworks linked.  The one that caught my eye the most was ChatKit.  When I looked at Messages in IDA I also found what seemed like an unusually high number of references to ChatKit as well and after a bit of digging I started to suspect that ChatKit is actually the framework that is responsible for sending/receiving messages.  With that suspicion let’s dig a little into ChatKit.&lt;/p&gt;
+&lt;p&gt;Once again, I dutifully got the path to ChatKit from &lt;code&gt;otool&lt;/code&gt; and went to copy it to my machine.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:~ root# scp /System/Library/PrivateFrameworks/ChatKit.framework/ChatKit dean@192.168.1.11:~/
+Password:
+/System/Library/PrivateFrameworks/ChatKit.framework/ChatKit: No such file or directory&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;No such file or directory? What the heck? Upon convincing myself that I do indeed have the correct path I was pretty stumped.  Otool clearly states that MobileSMS (the Messages app) links against this framework and IDA shows me the exact same information.  Even some of the debug strings gathered earlier reference it!  Needless to say this definitely ticked me off.  All I wanted to do was disassemble and inspect ChatKit in peace, but iOS wasn’t having any of that.&lt;/p&gt;
+&lt;p&gt;Stay tuned for the next instalment of this series where we solve the case of the missing ChatKit!&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Reversing iOS Applications: Part 1</title>
+       <link>https://lightbulbone.github.io/posts/2012/07/reversing-ios-applications-part-1/</link>
+       <pubDate>Mon, 23 Jul 2012 08:30:00 -0700</pubDate>
+       
+       <guid>https://lightbulbone.github.io/posts/2012/07/reversing-ios-applications-part-1/</guid>
+       <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;em&gt;Archive:&lt;/em&gt; This post is from an archive which unfortunately did not include images.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;Recently I acquired a 4th gen iPod Touch for reversing so before tackling something seemingly-impossible I thought I’d start with reversing an application.  In this post I’m going to focus on what I thought would be super easy; loading an application into IDA Pro.   The app I chose to play with is Kik (&lt;a href=&#34;http://www.kik.com/),&#34;&gt;http://www.kik.com/),&lt;/a&gt; mostly because it looked interesting and I’d never used it before.&lt;/p&gt;
+&lt;p&gt;I’m pretty new to reversing iOS (spent way more time on OS X) and up until now had done very little reading about the security features implemented.  So for some all of what I’m about to say may seem obvious, but for us people new to iOS it’s probably pretty helpful.&lt;/p&gt;
+&lt;p&gt;Figure 1: Opening Kik in IDA Pro&lt;/p&gt;
+&lt;p&gt;Since our goal is to get a reverse-able app into IDA Pro the first step is to acquire the binary.  Originally, being super naive, I just downloaded the app in iTunes and opened up IDA Pro.  Well, that didn’t work so well.  Looking at Figure 1 you’ll see that the code produced by IDA is so clearly wrong that we know we need to take a different approach.  Not only this, but when opening IDA will tell you the file is encrypted and it’s output is probably going to be useless.&lt;/p&gt;
+&lt;p&gt;Alright, so it turns out Apple has decided to encrypt the binary. I didn’t read much about the encryption they use, but apparently it is some variant of FairPlay.  In reality though, since I have a handy-dandy jailbroken iPod Touch sitting right here, it doesn’t matter.  Apple was kind enough to give us a nicely working copy of GDB and Cydia was kind enough to give us access to the device over SSH.  Note that the version of GDB available in Cydia is busted, for instructions on how to get it installed check out http://pod2g-ios.blogspot.ca/2012/02/working-gnu-debugger-on-ios-43.html.  Another super useful utility is otool, available through Cydia.&lt;/p&gt;
+&lt;p&gt;At this point we will start by statically analyzing the Kik binary a bit.  First, let’s use otool to see what architectures are in the binary (remember Mach-O can what is known as a “fat binary”).&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:/private/var/mobile/Applications/90E2C7FC-AD60-4F6B-940D-1EC8CC198560/Kik.app root# otool -arch all -Vh Kik
+Kik (architecture armv6):
+Mach header
+      magic cputype cpusubtype  caps    filetype ncmds sizeofcmds      flags
+   MH_MAGIC     ARM         V6  0x00     EXECUTE    &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;32&lt;/span&gt;       &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;3652&lt;/span&gt;   NOUNDEFS DYLDLINK TWOLEVEL
+Kik (architecture cputype (12) cpusubtype (9)):
+Mach header
+      magic cputype cpusubtype  caps    filetype ncmds sizeofcmds      flags
+   MH_MAGIC     ARM          &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;9&lt;/span&gt;  0x00     EXECUTE    &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;32&lt;/span&gt;       &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;3652&lt;/span&gt;   NOUNDEFS DYLDLINK TWOLEVEL&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Here we see that there are two binaries included in this fat binary: one for ARMv6, and one for ARMv7.  We’re interested in the ARMv7 stuff, but the Kik developers have apparently also included support for older devices.&lt;/p&gt;
+&lt;p&gt;Next we need to figure out what is actually encrypted in the binary.  For a full discussion on the Mach-O format check out Apple’s article, but basically the file is made up of three parts: a header, a list of load commands, and then the data.  To find out what part of the binary is encrypted we can use otool to print out the load commands and look at the &lt;code&gt;LC_ENCRYPTION_INFO&lt;/code&gt; entry.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:/private/var/mobile/Applications/90E2C7FC-AD60-4F6B-940D-1EC8CC198560/Kik.app root# otool -arch all -Vl Kik | grep -A5 LC_ENCRYP
+...
+          cmd LC_ENCRYPTION_INFO
+      cmdsize &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;20&lt;/span&gt;
+ cryptoff  &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;4096&lt;/span&gt;
+ cryptsize &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;724992&lt;/span&gt;
+ cryptid   &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt;
+...
+
+This entry is telling us a couple of important pieces of information.  First, the cryptoff field is telling us that the first byte of encrypted data is &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;4096&lt;/span&gt; bytes into the file.  Second, the cryptsize field is telling us that &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;724992&lt;/span&gt; bytes of the file (starting at cryptoff) are encrypted.  And third, cryptid is telling us that the file is encrypted (we’ll come back to this shortly).&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So now we know what portion of the binary is encrypted, how do we decrypt it?&lt;/p&gt;
+&lt;p&gt;As I said earlier, I didn’t look much into what encryption is used because it really doesn’t matter.  The wonderful thing about computers is that in order for something meaningful to occur the CPU must receive unencrypted instructions so all we need to do is let the iPod do it’s thing and dump the instructions.  This decryption occurs during the load phase so once the binary is mapped into memory it has been decrypted.  Therefore we can just use GDB to dump the memory to a file and patch the binary accordingly.&lt;/p&gt;
+&lt;p&gt;In order to dump the memory we first need to know what address range we should be grabbing.  Since we know that the encryption starts 4096 bytes into the file we just need to figure out where that is in memory and then work from there.  We can find this out by inspecting a couple other load commands present in the binary.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:/private/var/mobile/Applications/90E2C7FC-AD60-4F6B-940D-1EC8CC198560/Kik.app root# otool -arch all -Vl Kik
+...
+Kik (architecture cputype (12) cpusubtype (9)):
+Load &lt;span style=&#34;color:#038&#34;&gt;command&lt;/span&gt; &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0&lt;/span&gt;
+      cmd LC_SEGMENT
+  cmdsize &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;56&lt;/span&gt;
+  segname __PAGEZERO
+   vmaddr 0x00000000
+   vmsize 0x00001000
+  fileoff &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0&lt;/span&gt;
+ filesize &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0&lt;/span&gt;
+  maxprot ---
+ initprot ---
+   nsects &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0&lt;/span&gt;
+    flags (none)
+Load &lt;span style=&#34;color:#038&#34;&gt;command&lt;/span&gt; &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt;
+      cmd LC_SEGMENT
+  cmdsize &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;464&lt;/span&gt;
+  segname __TEXT
+   vmaddr 0x00001000
+   vmsize 0x000b2000
+  fileoff &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;0&lt;/span&gt;
+ filesize &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;729088&lt;/span&gt;
+  maxprot r-x
+ initprot r-x
+   nsects &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;6&lt;/span&gt;
+    flags (none)
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So we see in the &lt;code&gt;LC_SEGMENT&lt;/code&gt; for the &lt;code&gt;_TEXT&lt;/code&gt; segment file offset 0 (the start of the file) is mapped to virtual address 0x1000.  For the curious if you look the command for &lt;code&gt;_PAGEZERO&lt;/code&gt; you’ll see why &lt;code&gt;_TEXT&lt;/code&gt; starts where it does.&lt;/p&gt;
+&lt;p&gt;Alright, this is great! We now know that the beginning of the file is mapped to 0x1000 and that decrypted data we’re after is starting at 0x2000 (remember it was 4096 bytes into the file).  Now comes the easy part, fire up GDB and dump the memory!&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;lux0r:/private/var/mobile/Applications/90E2C7FC-AD60-4F6B-940D-1EC8CC198560/Kik.app root# gdb -quiet ./Kik
+Reading symbols &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; shared libraries .. &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;done&lt;/span&gt;
+(gdb) b UIApplicationMain
+Function &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;UIApplicationMain&amp;#34;&lt;/span&gt; not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+Breakpoint &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; (UIApplicationMain) pending.
+(gdb) r
+Starting program: /private/var/mobile/Applications/90E2C7FC-AD60-4F6B-940D-1EC8CC198560/Kik.app/Kik 
+Removing symbols &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; unused shared libraries . &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;done&lt;/span&gt;
+Reading symbols &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;for&lt;/span&gt; shared libraries ...+................................................................................................................................................ &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;done&lt;/span&gt;
+Breakpoint &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; at 0x31d348a6
+Pending breakpoint &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; - &lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;&amp;#34;UIApplicationMain&amp;#34;&lt;/span&gt; resolved
+
+Breakpoint 1, 0x31d348a6 in UIApplicationMain ()
+(gdb) dump binary memory mem_dump.kik 0x2000 (0x2000 + 724992)
+(gdb) q
+The program is running.  Exit anyway? (y or n) y&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;BAM! We got our data in a file named &lt;code&gt;mem_dump.kik&lt;/code&gt;, score! Now just copy it over to your desktop machine and we’re almost there! While you’re at it, it’s a good idea to copy over the Kik binary too so we can patch it.&lt;/p&gt;
+&lt;p&gt;To make our lives easier, we’ll extract the ARMv7 binary from within the universal Kik binary.  This is pretty simple, use lipo.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;dean@BigBertha:~/Reversing/Apps/Kik_iOS $ lipo -thin armv7 -output patched_kik Kik_Fat 
+dean@BigBertha:~/Reversing/Apps/Kik_iOS $ otool -arch all -Vh patched_kik 
+patched_kik:
+Mach header
+      magic cputype cpusubtype  caps    filetype ncmds sizeofcmds      flags
+   MH_MAGIC     ARM         V7  0x00     EXECUTE    &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;32&lt;/span&gt;       &lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;3652&lt;/span&gt;   NOUNDEFS DYLDLINK TWOLEVEL&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Let’s now just see what happens when we use class-dump on this unpatched binary.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;dean@BigBertha:~/Reversing/Apps/Kik_iOS $ class-dump patched_kik 
+/*
+ *     Generated by class-dump 3.3.4 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;64&lt;/span&gt; bit).
+ *
+ *     class-dump is Copyright (C) 1997-1998, 2000-2001, 2004-2011 by Steve Nygard.
+ */
+
+&lt;span style=&#34;color:#888&#34;&gt;#pragma mark -&lt;/span&gt;
+
+/*
+ * File: patched_kik
+ * UUID: F88022A0-B96C-305F-9BDC-9D7FC2D2C76C
+ * Arch: arm v7 (armv7)
+ *
+ *       Objective-C Garbage Collection: Unsupported
+ *       This file is encrypted:
+ *           cryptid: 0x00000001, cryptoff: 0x00001000, cryptsize: 0x000b1000
+ */&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Well, that’s not very helpful! Time to patch this thing.&lt;/p&gt;
+&lt;p&gt;To patch the file we need to do two things.  First we need to copy the decrypted data into the binary and, second, we need to disable the encryption load command.  Copying the data over can be done quite simply enough with the dd shell command.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;dean@BigBertha:~/Reversing/Apps/Kik_iOS $ dd &lt;span style=&#34;color:#369&#34;&gt;bs&lt;/span&gt;=&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#369&#34;&gt;seek&lt;/span&gt;=&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;4096&lt;/span&gt; &lt;span style=&#34;color:#369&#34;&gt;conv&lt;/span&gt;=notrunc &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;if&lt;/span&gt;=mem_dump.kik &lt;span style=&#34;color:#369&#34;&gt;of&lt;/span&gt;=patched_kik 
+724992+0 records in
+724992+0 records out
+&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;724992&lt;/span&gt; bytes transferred in 1.340430 secs (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;540865&lt;/span&gt; bytes/sec)
+
+Disabling the encryption load &lt;span style=&#34;color:#038&#34;&gt;command&lt;/span&gt; is a little more involved, but still pretty easy.  All we need to &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;do&lt;/span&gt; is &lt;span style=&#34;color:#038&#34;&gt;set&lt;/span&gt; the cryptid field to 0x0.  This can be &lt;span style=&#34;color:#080;font-weight:bold&#34;&gt;done&lt;/span&gt; using you’re favourite hex editor.  To find the address you can either use otool or, as I did, use a fun little tool called MachOView.&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Figure 2: Patched Kik binary opened in MachOView&lt;/p&gt;
+&lt;p&gt;In Figure 2 you can see that the offset to the cryptid field is 0x848, so just go ahead and set that to 0x0.  Next, try class-dump again.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;dean@BigBertha:~/Reversing/Apps/Kik_iOS $ class-dump patched_kik
+/*
+ *     Generated by class-dump 3.3.4 (&lt;span style=&#34;color:#00d;font-weight:bold&#34;&gt;64&lt;/span&gt; bit).
+ *
+ *     class-dump is Copyright (C) 1997-1998, 2000-2001, 2004-2011 by Steve Nygard.
+ */
+
+&lt;span style=&#34;color:#888&#34;&gt;#pragma mark Named Structures&lt;/span&gt;
+
+struct CGAffineTransform {
+    float _field1;
+    float _field2;
+    float _field3;
+    float _field4;
+    float _field5;
+    float _field6;
+};
+
+struct CGPoint {
+    float x;
+    float y;
+};
+...&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The output from class-dump should go on for a really long time; it turns out Kik is pretty huge!  Finally, we feel pretty confident in our efforts and it’s time to try opening in IDA.  When loading the binary make sure you switch the processor to ARM (it defaults to x86).&lt;/p&gt;
+&lt;p&gt;Figure 3: Patched Kik binary opened in IDA Pro&lt;/p&gt;
+&lt;p&gt;There you have it folks, Figure 3 is the patched (and decrypted) Kik binary opened up in IDA Pro ready to be reversed.&lt;/p&gt;
+&lt;p&gt;In my next post I’ll dive more into this app, as said in the beginning I’m most curious about how it’s network stuff is done.&lt;/p&gt;
+</description>
+     </item>
+   
+ </channel>
+</rss>
