@@ -2,21 +2,21 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
  <channel>
    <title>Binary Ninja on LightBulbOne</title>
-   <link>https://lightbulbone.github.io/tags/binary-ninja/</link>
+   <link>https://www.lightbulbone.com/tags/binary-ninja/</link>
    <description>Recent content in Binary Ninja on LightBulbOne</description>
    <generator>Hugo -- gohugo.io</generator>
    <language>en-us</language>
    <lastBuildDate>Sun, 25 Mar 2018 08:00:00 -0700</lastBuildDate>
    
-       <atom:link href="https://lightbulbone.github.io/tags/binary-ninja/index.xml" rel="self" type="application/rss+xml" />
+       <atom:link href="https://www.lightbulbone.com/tags/binary-ninja/index.xml" rel="self" type="application/rss+xml" />
    
    
      <item>
        <title>UEFI Ninja</title>
-       <link>https://lightbulbone.github.io/posts/2018/03/uefi-ninja/</link>
+       <link>https://www.lightbulbone.com/posts/2018/03/uefi-ninja/</link>
        <pubDate>Sun, 25 Mar 2018 08:00:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2018/03/uefi-ninja/</guid>
+       <guid>https://www.lightbulbone.com/posts/2018/03/uefi-ninja/</guid>
        <description>&lt;p&gt;As &lt;a href=&#34;https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface&#34;&gt;Wikipedia&lt;/a&gt; and its &lt;a href=&#34;http://www.uefi.org/faq&#34;&gt;own Forum&lt;/a&gt; says, UEFI (Unified Extensible Firmware Interface) is a software layer situated between the operating system and platform firmware. It was developed as a replacement for the BIOS and provides an environment where developers can create applications and drivers for use before the operating system is loaded. UEFI is defined as a &lt;a href=&#34;http://uefi.org/specifications&#34;&gt;specification&lt;/a&gt; with a corresponding reference implementation named &lt;a href=&#34;https://www.tianocore.org/&#34;&gt;Tianocore&lt;/a&gt;.&lt;/p&gt;
 &lt;p&gt;In order to better understand another target I am reversing it became clear that I needed to learn more about UEFI and reverse some aspects of it. This blog post discusses some of the basics of UEFI and tools available.&lt;/p&gt;
 &lt;h1 id=&#34;a-crash-course-in-uefi&#34;&gt;A Crash Course in UEFI&lt;/h1&gt;
@@ -68,7 +68,7 @@ Flash Descriptor (Intel PCH) chips 0x00, regions 0x00, masters 0x02, PCH straps 
 &lt;/ul&gt;
 &lt;p&gt;After that has been completed you can then mark various offsets as needed.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2018/03/UN-01.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2018/03/UN-01.png&#34;
          alt=&#34;Marked up UEFI image entry in IDA&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Marked up UEFI image entry in IDA&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -107,7 +107,7 @@ Flash Descriptor (Intel PCH) chips 0x00, regions 0x00, masters 0x02, PCH straps 
 &lt;li&gt;The LLIL is presented as a tree structure. In our case we&amp;rsquo;re looking for a path that matches the tree shown below.&lt;/li&gt;
 &lt;/ul&gt;
 &lt;figure class=&#34;center&#34;&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2018/03/UN-02.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2018/03/UN-02.png&#34;
          alt=&#34;Tree structure of LLIL to identify a candidate call site&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Tree structure of LLIL to identify a candidate call site&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -131,10 +131,10 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
    
      <item>
        <title>Reversing a macOS Kernel Extension</title>
-       <link>https://lightbulbone.github.io/posts/2016/10/dsmos-kext/</link>
+       <link>https://www.lightbulbone.com/posts/2016/10/dsmos-kext/</link>
        <pubDate>Tue, 11 Oct 2016 18:25:50 -0800</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2016/10/dsmos-kext/</guid>
+       <guid>https://www.lightbulbone.com/posts/2016/10/dsmos-kext/</guid>
        <description>&lt;p&gt;In my &lt;a href=&#34;http://lightbulbone.com/2016/10/04/intro-to-macos-kernel-debugging.html&#34;&gt;last post&lt;/a&gt; I covered the basics of kernel debugging in macOS.  In this post we will put some of that to use and work through the process of reversing a macOS kernel module.&lt;/p&gt;
 &lt;p&gt;As I said in my last post, in macOS there is a kernel module named “Don’t Steal Mac OS X” (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  My goal for this post is to simply work through the kernel module with the intent of discovering its functionality and use it as an opportunity to learn a bit about kernel debugging.&lt;/p&gt;
 &lt;p&gt;If you&amp;rsquo;d like to follow along I pulled the DSMOS module off of a laptop running macOS Sierra Beta (16A286a).  Based on cursory looks at a couple copies from different versions of macOS it hasn&amp;rsquo;t changed much recently so you should be able to follow along with a copy from Mac OS X 10.11 or macOS Sierra.  As you&amp;rsquo;ll see in the screenshots, I used IDA Pro for this reversing however using a program like Hopper would be fine as well.&lt;/p&gt;
@@ -142,7 +142,7 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
 &lt;p&gt;At a glance, the DSMOS kernel module is fairly simple in terms of number of functions.  It has 25 functions of which we only really care about 6.  Most of the functions we don&amp;rsquo;t care about are constructors or destructors.  Admittedly I haven&amp;rsquo;t taken the time to understand constructors and destructors used by a kernel module sp will be skipping them in this post.&lt;/p&gt;
 &lt;p&gt;Typically when I first look at a binary I start by looking at the strings in the binary.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-01.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-01.png&#34;
          alt=&#34;Strings in DSMOS kernel module&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Strings in DSMOS kernel module&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -200,7 +200,7 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
 &lt;p&gt;With these functions as starting points, the next step is to start working through them.  At this point our goal is identify what each functionality each provides.&lt;/p&gt;
 &lt;h2 id=&#34;registering-an-ioservice-notification-handler&#34;&gt;Registering an IOService Notification Handler&lt;/h2&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-02.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-02.png&#34;
          alt=&#34;Main block of code in sub_A9E&#34; width=&#34;100%&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Main block of code in sub_A9E&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -211,7 +211,7 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
 &lt;p&gt;When an IOService registers the AppleSMC class the code in &lt;code&gt;sub_B2A&lt;/code&gt; will be notified.  This function begins by calling &lt;code&gt;OSMetaClassBase::safeMetaCast()&lt;/code&gt; to cast the incoming service into an AppleSMC service.  Note that Apple&amp;rsquo;s documentation states that developers should not call OSMetaClassBase methods directly and should instead use provided macros.  In this case, the call &lt;code&gt;safeMetaCast()&lt;/code&gt; was likely generated by using the &lt;code&gt;OSDynamicCast&lt;/code&gt; macro which Apple lists as a valid macro to be used by developers.&lt;/p&gt;
 &lt;p&gt;The next block in &lt;code&gt;sub_B2A&lt;/code&gt;, shown in Figure 3, is where things actually start.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-03.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-03.png&#34;
          alt=&#34;Querying SMC for key&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Querying SMC for key&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -220,7 +220,7 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
 &lt;p&gt;Since C++ is horribly annoying to reverse due to all the indirect calls, rather than figuring out what method is represented by &lt;code&gt;rax+850h&lt;/code&gt; I turned to Google.  Searching for &lt;code&gt;OSK0&lt;/code&gt; and &lt;code&gt;OSK1&lt;/code&gt; turns up an &lt;a href=&#34;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&#34;&gt;article&lt;/a&gt; posted by Amit Singh.  In it he talks briefly about an older version of the DSMOS kernel extenion and also provides code that uses the &lt;code&gt;OSK0&lt;/code&gt; and &lt;code&gt;OSK1&lt;/code&gt; strings to query the SMC for two keys.  Once these keys have been acquired the kernel extension then computes a SHA-256 hash and compares to a value stored in memory.  If this comparison fails, an error is printed (not shown).&lt;/p&gt;
 &lt;p&gt;If the hashes match then we skip to the block shown in Figure 4.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-04.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-04.png&#34;
          alt=&#34;Installing DSMOS hook&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Installing DSMOS hook&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -273,7 +273,7 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
 &lt;p&gt;Listing 3: Call to &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; from &lt;code&gt;load_segment&lt;/code&gt;&lt;/p&gt;
 &lt;p&gt;The interesting part of the code in Listing 3 is that &lt;code&gt;unprotect_dsmos_segment&lt;/code&gt; is only called on segments with the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set.  As mentioned earlier, macOS only includes a few binaries with this flag set such as Finder, Dock, and loginwindow.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-05.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-05.png&#34;
          alt=&#34;Main functionality of hook function&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Main functionality of hook function&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -282,7 +282,7 @@ mem = BinaryView.read(val, &lt;span style=&#34;color:#00d;font-weight:bold&#34;&
 &lt;h2 id=&#34;the-hook-implementation&#34;&gt;The Hook Implementation&lt;/h2&gt;
 &lt;p&gt;At this point we know that the DSMOS kernel extension queries the SMC for a pair of keys, initializes some AES decryption contexts and global variables, then installs a hook by calling &lt;code&gt;dsmos_page_transform_hook&lt;/code&gt;.  We also know that the Mach-O loader in the kernel will call this hook when it finds a segment with the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set.  The next question then is: what does the hook installed by the DSMOS kernel extension actually do?&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-05.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-05.png&#34;
          alt=&#34;Main functionality of hook function&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Main functionality of hook function&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -339,7 +339,7 @@ B97F871A-44FD-3EA4-BC46-8FD682118C79 0xffffff7fadf449a0   0xffffff7fadf41000   0
 &lt;h3 id=&#34;reversing-the-unprotect-algorithm&#34;&gt;Reversing the Unprotect Algorithm&lt;/h3&gt;
 &lt;p&gt;In the end I just sat down and started working through the algorithm in IDA.  I did begin to write a program to unprotect before my motivation to work through the tedious code fell through the floor.  For me, looking at DSMOS was an opportunity to learn what a kernel module I&amp;rsquo;ve known about for many years and become more familiar with the macOS kernel.  That being said a few things a worth pointing out.&lt;br&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-06.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-06.png&#34;
          alt=&#34;Loop found in sub_1734&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Loop found in sub_1734&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -347,7 +347,7 @@ B97F871A-44FD-3EA4-BC46-8FD682118C79 0xffffff7fadf449a0   0xffffff7fadf41000   0
 &lt;/p&gt;
 &lt;p&gt;In Figure 6 a portion of &lt;code&gt;sub_1734&lt;/code&gt; is shown.  In it we see the first eight bytes of the &lt;code&gt;from&lt;/code&gt; pointer (stored in &lt;code&gt;r14&lt;/code&gt;) being used to build a value to pass to &lt;code&gt;sub_125A&lt;/code&gt;.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2016/10/DSMOS-07.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2016/10/DSMOS-07.png&#34;
          alt=&#34;Unrolled loop in sub_125A&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Unrolled loop in sub_125A&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -362,10 +362,10 @@ B97F871A-44FD-3EA4-BC46-8FD682118C79 0xffffff7fadf449a0   0xffffff7fadf41000   0
    
      <item>
        <title>Introduction to macOS Kernel Debugging</title>
-       <link>https://lightbulbone.github.io/posts/2016/10/intro-to-macos-kernel-debugging/</link>
+       <link>https://www.lightbulbone.com/posts/2016/10/intro-to-macos-kernel-debugging/</link>
        <pubDate>Tue, 04 Oct 2016 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2016/10/intro-to-macos-kernel-debugging/</guid>
+       <guid>https://www.lightbulbone.com/posts/2016/10/intro-to-macos-kernel-debugging/</guid>
        <description>&lt;p&gt;In macOS there is a kernel module named &amp;ldquo;Don&amp;rsquo;t Steal Mac OS X&amp;rdquo; (DSMOS) which registers a function with the Mach-O loader to unpack binaries that have the &lt;code&gt;SG_PROTECTED_VERSION_1&lt;/code&gt; flag set on their &lt;code&gt;__TEXT&lt;/code&gt; segment. Finder, Dock, and loginwindow are a few examples of binaries that have this flag set.  As it turns out, this kernel module at one point &lt;a href=&#34;http://osxbook.com/book/bonus/chapter7/tpmdrmmyth/&#34;&gt;played a role in the myth&lt;/a&gt; that Apple had included a TPM in their Mac hardware.&lt;/p&gt;
 &lt;p&gt;I started reversing this kernel module because I was getting frustrated trying to reverse parts of the iOS kernel.  It occurred to me that I was trying to run before walking so it was time to slow down a little.  With that in mind, this post provides an introduction to kernel debugging.  My next post will expand on this and go through reversing the DSMOS kernel module.&lt;/p&gt;
 &lt;h2 id=&#34;kernel-debug-kits&#34;&gt;Kernel Debug Kits&lt;/h2&gt;
@@ -548,14 +548,14 @@ E6E68296-809B-3884-ADEF-E85831F4B106 0xffffff7f88fc7090   0xffffff7f88fbb000   0
    
      <item>
        <title>Analysis of the iOS Bluetooth Stack: BlueTool</title>
-       <link>https://lightbulbone.github.io/posts/2015/12/bluetool/</link>
+       <link>https://www.lightbulbone.com/posts/2015/12/bluetool/</link>
        <pubDate>Sun, 27 Dec 2015 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2015/12/bluetool/</guid>
+       <guid>https://www.lightbulbone.com/posts/2015/12/bluetool/</guid>
        <description>&lt;p&gt;On iOS the Bluetooth stack is split into three layers as shown in Figure 1.  At the top is the CoreBluetooth framework used by iOS app developers and at the bottom is the Bluetooth hardware itself.  In between these two layers is a collection of daemons that implement various aspects of the Bluetooth stack.  For example, most Bluetooth Low Energy (BLE) specific functionality is contained in the BTLEServer daemon.  BlueTool is one of the daemons running and is primarily responsible for acting as a bridge between the rest of the Bluetooth stack and the hardware.  It also likely acts as an internal test tool at Apple during development.&lt;/p&gt;
 &lt;p&gt;All analysis in this article was carried out on a 5th generation iPod Touch running iOS 8.4 (12H143).  My primary focus during analysis was on understanding what functionality BlueTool provides.  I was not actively looking for bugs despite finding a couple.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2015/12/iOS-Bluetooth-Overview.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2015/12/iOS-Bluetooth-Overview.png&#34;
          alt=&#34;Overview of the iOS Bluetooth stack.&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;Overview of the iOS Bluetooth stack.&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -801,10 +801,10 @@ bluetool-&amp;gt; &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
    
      <item>
        <title>IDA Processor Options - Oops.</title>
-       <link>https://lightbulbone.github.io/posts/2014/07/ida-processor-options-oops/</link>
+       <link>https://www.lightbulbone.com/posts/2014/07/ida-processor-options-oops/</link>
        <pubDate>Mon, 21 Jul 2014 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2014/07/ida-processor-options-oops/</guid>
+       <guid>https://www.lightbulbone.com/posts/2014/07/ida-processor-options-oops/</guid>
        <description>&lt;blockquote&gt;
 &lt;p&gt;&lt;em&gt;Archive:&lt;/em&gt; This post is from an archive which unfortunately did not include images.&lt;/p&gt;
 &lt;/blockquote&gt;
@@ -812,7 +812,7 @@ bluetool-&amp;gt; &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
 &lt;p&gt;The problem? I forgot to set the processor options when loading the LLB binary.&lt;/p&gt;
 &lt;p&gt;So, take my mistake as a learning experience.  When loading your binary, be sure to set your processor type.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/Load_IDA.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/Load_IDA.png&#34;
          alt=&#34;IDA Load FIle Dialog&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;IDA Load FIle Dialog&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -820,7 +820,7 @@ bluetool-&amp;gt; &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
 
 &lt;p&gt;And then, the important part, set the processor options.  In this case the default architecture selected by the ARM processor module was not inline with the architecture used by the LLB code.  For LLB, be sure to select &lt;strong&gt;ARMv7-AR&lt;/strong&gt;.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/ARM_Options.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/ARM_Options.png&#34;
          alt=&#34;ARM Processor Options&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;ARM Processor Options&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -833,14 +833,14 @@ bluetool-&amp;gt; &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
    
      <item>
        <title>Reverse Engineering the iOS Boot Mechanism: Part 1</title>
-       <link>https://lightbulbone.github.io/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/</link>
+       <link>https://www.lightbulbone.com/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/</link>
        <pubDate>Mon, 14 Jul 2014 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/</guid>
+       <guid>https://www.lightbulbone.com/posts/2014/07/reverse-engineering-the-ios-boot-mechanism-part-1/</guid>
        <description>&lt;p&gt;Due to some unforeseen medical issues, my time as an elite athlete adbruptly came to an end a couple months ago and while dealing with those issues I had a lot of free time on my hands.  So, naturally I finally got around to reading &lt;a href=&#34;http://www.amazon.com/Mac-OS-Internals-Systems-Approach/dp/0321278542&#34;&gt;Mac OS X Internals: A Systems Approach&lt;/a&gt; by Amit Singh and &lt;a href=&#34;http://www.amazon.com/Mac-OS-iOS-Internals-Apples/dp/1118057651&#34;&gt;Mac OS X and iOS Internals: To the Apple&amp;rsquo;s Core&lt;/a&gt; by Johnathan Levin in their entirety.  Both are excellent books and highly recommended.  Between reading those books, my general curiousity in low-level computer concepts, and an even greater curiousity in mobile computing I decided it was time to take a crack at reverse engineering the iOS boot mechnisms.&lt;/p&gt;
 &lt;h3 id=&#34;components-of-the-boot-mechanism&#34;&gt;Components of the Boot Mechanism&lt;/h3&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/Components.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/Components.png&#34;
          alt=&#34;iOS Boot Components&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;iOS Boot Components&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -906,7 +906,7 @@ LLB.n90ap.RELEASE.img3.dec
 &lt;p&gt;This will be the last part covered today.  What we want to do is set things up in IDA so that the addresses are correct and you can then explore on your own.  In my next article I&amp;rsquo;ll go into more detail about how the binary is laid out and how I actually went about understanding the LLB image at a high-level.&lt;/p&gt;
 &lt;p&gt;First thing&amp;rsquo;s first, let&amp;rsquo;s open up IDA and load our decrypted image.  To do that, find IDA Pro in your Applications folder then once it&amp;rsquo;s running go to &lt;strong&gt;File -&amp;gt; Open&lt;/strong&gt;.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Open.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/IDA_Open.png&#34;
          alt=&#34;IDA open file dialog&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;IDA open file dialog&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -914,7 +914,7 @@ LLB.n90ap.RELEASE.img3.dec
 
 &lt;p&gt;You&amp;rsquo;ll then be prompted with the &amp;ldquo;Load a new file&amp;rdquo; screen.  Here you&amp;rsquo;ll want to change your processor type from the default Intel selection to ARM.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_ARM.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/IDA_ARM.png&#34;
          alt=&#34;IDA New File dialog&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;IDA New File dialog&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -922,7 +922,7 @@ LLB.n90ap.RELEASE.img3.dec
 
 &lt;p&gt;Next you&amp;rsquo;ll be prompted to make any desired changes to the memory organization.  Just click &lt;strong&gt;OK&lt;/strong&gt; for the default choices.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Mem.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/IDA_Mem.png&#34;
          alt=&#34;IDA Memory Organization&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;IDA Memory Organization&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -930,7 +930,7 @@ LLB.n90ap.RELEASE.img3.dec
 
 &lt;p&gt;At this point IDA should warn you that since you&amp;rsquo;re loading a raw binary it has no idea how to parse the file.  Because of that, you&amp;rsquo;ll have to instruct IDA where the entry point is.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Warn.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/IDA_Warn.png&#34;
          alt=&#34;IDA Warning&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;IDA Warning&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -938,7 +938,7 @@ LLB.n90ap.RELEASE.img3.dec
 
 &lt;p&gt;Now our file is loaded, but the addresses are wrong.  The Boot ROM on an iOS Device loads LLB beginning at the address &lt;code&gt;0x84000000&lt;/code&gt; so we need to tell IDA that.  You can do this by going to &lt;strong&gt;Edit -&amp;gt; Segments -&amp;gt; Rebase Program&amp;hellip;&lt;/strong&gt; and entering &lt;code&gt;0x84000000&lt;/code&gt; into the field.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_GoodBase.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/IDA_GoodBase.png&#34;
          alt=&#34;IDA Rebase Program&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;IDA Rebase Program&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -946,7 +946,7 @@ LLB.n90ap.RELEASE.img3.dec
 
 &lt;p&gt;Finally, we now have LLB loaded with the correct addresses.  All we need to do now is tell IDA where the entry point is and let it do as much of its auto-analysis as possible.  In my next article I&amp;rsquo;ll explain why this is true, but for now just place the IDA cursor on the byte at &lt;code&gt;0x84000000&lt;/code&gt; and mark it as code (hit the &lt;strong&gt;C&lt;/strong&gt; key).  If all goes well IDA should recognize that as a branch instruction.&lt;/p&gt;
 &lt;figure&gt;
-    &lt;img src=&#34;https://lightbulbone.github.io/images/2014/07/IDA_Code.png&#34;
+    &lt;img src=&#34;https://www.lightbulbone.com/images/2014/07/IDA_Code.png&#34;
          alt=&#34;First instruction marked as code&#34;/&gt; &lt;figcaption&gt;
             &lt;p&gt;First instruction marked as code&lt;/p&gt;
         &lt;/figcaption&gt;
@@ -962,10 +962,10 @@ LLB.n90ap.RELEASE.img3.dec
    
      <item>
        <title>Snooping on CommCenter</title>
-       <link>https://lightbulbone.github.io/posts/2013/08/snooping-on-commcenter/</link>
+       <link>https://www.lightbulbone.com/posts/2013/08/snooping-on-commcenter/</link>
        <pubDate>Sat, 03 Aug 2013 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2013/08/snooping-on-commcenter/</guid>
+       <guid>https://www.lightbulbone.com/posts/2013/08/snooping-on-commcenter/</guid>
        <description>&lt;p&gt;CommCenter is a wonderful part of iOS since it is the single point that is responsible for communication between iOS and the baseband.  And with the baseband being responsible for controlling the telephony components I wanted to see what CommCenter was telling it.&lt;/p&gt;
 &lt;p&gt;To do this all you need to do is create a dynamic library with a few functions then shove that in between CommCenter and the baseband.  Easy, eh?&lt;/p&gt;
 &lt;p&gt;Before I begin I should note that I did this using an iPhone 4 running iOS 6.1 (jailbroken) and that on newer iPhones the process is slightly different.&lt;/p&gt;
@@ -992,10 +992,10 @@ LLB.n90ap.RELEASE.img3.dec
    
      <item>
        <title>iOS Shared Cache Extraction</title>
-       <link>https://lightbulbone.github.io/posts/2013/07/ios-shared-cache-extraction/</link>
+       <link>https://www.lightbulbone.com/posts/2013/07/ios-shared-cache-extraction/</link>
        <pubDate>Fri, 26 Jul 2013 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2013/07/ios-shared-cache-extraction/</guid>
+       <guid>https://www.lightbulbone.com/posts/2013/07/ios-shared-cache-extraction/</guid>
        <description>&lt;p&gt;Having fallen off the iOS-exploration train due to completing my  Masters and other commitments, I have finally climbed back aboard in pursuit of understanding the telephony stack.&lt;/p&gt;
 &lt;p&gt;Like most things in iOS that are used frequently, the vast majority of the frameworks and libraries used in the telephony stack reside in the dyld shared cache located at &lt;code&gt;/System/Library/Caches/com.apple.dyld/dyld_shared_cache_armv7&lt;/code&gt;.&lt;/p&gt;
 &lt;p&gt;In this post I am going to explain how to go about extracting this cache file so that you can then work with each library individually.&lt;/p&gt;
@@ -1022,10 +1022,10 @@ LLB.n90ap.RELEASE.img3.dec
    
      <item>
        <title>Remote Debugging With lldb</title>
-       <link>https://lightbulbone.github.io/posts/2013/01/remote-debugging-with-lldb/</link>
+       <link>https://www.lightbulbone.com/posts/2013/01/remote-debugging-with-lldb/</link>
        <pubDate>Tue, 08 Jan 2013 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2013/01/remote-debugging-with-lldb/</guid>
+       <guid>https://www.lightbulbone.com/posts/2013/01/remote-debugging-with-lldb/</guid>
        <description>&lt;p&gt;The other day I was working on a project in Xcode and was getting fed up with it crashing and just not behaving.  So I set out on a mission to figure out how to remote debug an iOS app.  The secret to it all is LLDB, the LLVM Debugger.  LLDB is now the default debugger in Xcode (has been for awhile) and is a pretty powerful debugger complete with scripting in Python and many other hidden gems.&lt;/p&gt;
 &lt;p&gt;To follow along you will need:&lt;/p&gt;
 &lt;ul&gt;
@@ -1061,10 +1061,10 @@ dyld&lt;span style=&#34;color:#d20;background-color:#fff0f0&#34;&gt;`&lt;/span&g
    
      <item>
        <title>Fuzzy iOS Messages!</title>
-       <link>https://lightbulbone.github.io/posts/2012/10/fuzzy-ios-messages/</link>
+       <link>https://www.lightbulbone.com/posts/2012/10/fuzzy-ios-messages/</link>
        <pubDate>Fri, 19 Oct 2012 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2012/10/fuzzy-ios-messages/</guid>
+       <guid>https://www.lightbulbone.com/posts/2012/10/fuzzy-ios-messages/</guid>
        <description>&lt;p&gt;Awhile ago I came across a post about fuzzing with a new data flow language called Pythonect.  When I read about it I thought it sounded like a pretty nifty language so I decided to try using it to fuzz the iMessage interface in the iOS Messages app.&lt;/p&gt;
 &lt;p&gt;The first part of this task is to come up with a way to send messages to an iOS device using the iMessage service.  Luckily the new Messages app on OS X 10.8 has support for AppleScript and you can send messages through it.&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre style=&#34;background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;color:#c00;font-weight:bold&#34;&gt;#!/usr/bin/osascript
@@ -1090,10 +1090,10 @@ end run&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
    
      <item>
        <title>I Spy ChatKit!</title>
-       <link>https://lightbulbone.github.io/posts/2012/09/i-spy-chatkit/</link>
+       <link>https://www.lightbulbone.com/posts/2012/09/i-spy-chatkit/</link>
        <pubDate>Sat, 08 Sep 2012 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2012/09/i-spy-chatkit/</guid>
+       <guid>https://www.lightbulbone.com/posts/2012/09/i-spy-chatkit/</guid>
        <description>&lt;p&gt;In the last post I talked about starting to investigate MobileSMS (Messages app on iOS) and concluded with the mystery of the missing ChatKit.  I’m pleased to say that ChatKit wasn’t missing, it’s just hiding!&lt;/p&gt;
 &lt;p&gt;Admittedly I spent way to much time staring at the ChatKit.framework folder wondering where that stupid binary went.  Everything I’d read (mainly otool and IDA) told me this framework was being loaded but it wasn’t anywhere to be found on the file system.  I even went as far as writing a little script that identified every binary on the device that linked to this framework—it had to be somewhere.  Needless to say, I was pretty confused.&lt;/p&gt;
 &lt;p&gt;Well, onward and upward! If you run MobileSMS under GDB and have a peak at the loaded libraries you will indeed see that ChatKit is there with an address and everything.&lt;/p&gt;
@@ -1183,10 +1183,10 @@ End with a line saying just &lt;span style=&#34;color:#d20;background-color:#fff
    
      <item>
        <title>Reversing iOS Applications: Part 2</title>
-       <link>https://lightbulbone.github.io/posts/2012/08/reversing-ios-applications-part-2/</link>
+       <link>https://www.lightbulbone.com/posts/2012/08/reversing-ios-applications-part-2/</link>
        <pubDate>Thu, 09 Aug 2012 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2012/08/reversing-ios-applications-part-2/</guid>
+       <guid>https://www.lightbulbone.com/posts/2012/08/reversing-ios-applications-part-2/</guid>
        <description>&lt;blockquote&gt;
 &lt;p&gt;&lt;em&gt;Archive:&lt;/em&gt; This post is from an archive which unfortunately did not include images.&lt;/p&gt;
 &lt;/blockquote&gt;
@@ -1233,10 +1233,10 @@ Password:
    
      <item>
        <title>Reversing iOS Applications: Part 1</title>
-       <link>https://lightbulbone.github.io/posts/2012/07/reversing-ios-applications-part-1/</link>
+       <link>https://www.lightbulbone.com/posts/2012/07/reversing-ios-applications-part-1/</link>
        <pubDate>Mon, 23 Jul 2012 08:30:00 -0700</pubDate>
        
-       <guid>https://lightbulbone.github.io/posts/2012/07/reversing-ios-applications-part-1/</guid>
+       <guid>https://www.lightbulbone.com/posts/2012/07/reversing-ios-applications-part-1/</guid>
        <description>&lt;blockquote&gt;
 &lt;p&gt;&lt;em&gt;Archive:&lt;/em&gt; This post is from an archive which unfortunately did not include images.&lt;/p&gt;
 &lt;/blockquote&gt;
